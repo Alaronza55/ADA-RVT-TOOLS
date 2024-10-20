@@ -26,18 +26,36 @@ _____________________________________________________________________
 Author:     Almog Davidson"""
 
 
-#Imports
+#IMPORTS
+import os
 import sys
-from Autodesk.Revit.DB import (Transaction)
+import Autodesk
+from Autodesk.Revit.UI import *
+from Autodesk.Revit.DB import *
 
-#Variables
-doc = __revit__.ActiveUIDocument.Document
-view = doc.ActiveView
-t = Transaction(doc,'change scale')
+#VARIABLES
+uidoc     = __revit__.ActiveUIDocument
+doc       = __revit__.ActiveUIDocument.Document #type: Document
 
-#Main
+# CLASS
+class Mult_Category(Selection.ISelectionFilter):
+	def __init__(self, nom_categorie_1, nom_categorie_2):
+		self.nom_categorie_1 = nom_categorie_1
+		self.nom_categorie_2 = nom_categorie_2
+	def AllowElement(self, e):
+		if e.Category.Name == self.nom_categorie_1 or e.Category.Name == self.nom_categorie_2:
+			return True
+		else:
+			return False
+	def AllowReference(self, ref, point):
+		return true
+
+#SELECT SURFACE ELEMENT
+sel1 = uidoc.Selection.PickObject(Selection.ObjectType.Element, 'Choose Element')
+el1 = doc.GetElement(sel1)
+
+t = Transaction(doc, 'selection')
 t.Start()
-
-view.Scale = 50
-
+par1 = el1.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
+par1.Set('')
 t.Commit()
