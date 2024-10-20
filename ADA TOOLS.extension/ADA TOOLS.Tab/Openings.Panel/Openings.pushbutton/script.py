@@ -39,11 +39,14 @@ doc       = __revit__.ActiveUIDocument.Document #type: Document
 
 # CLASS
 class Mult_Category(Selection.ISelectionFilter):
-	def __init__(self, nom_categorie_1, nom_categorie_2):
+	def __init__(self, nom_categorie_1, nom_categorie_2, nom_categorie_3, nom_categorie_4):
 		self.nom_categorie_1 = nom_categorie_1
 		self.nom_categorie_2 = nom_categorie_2
+		self.nom_categorie_3 = nom_categorie_3
+		self.nom_categorie_4 = nom_categorie_4
+
 	def AllowElement(self, e):
-		if e.Category.Name == self.nom_categorie_1 or e.Category.Name == self.nom_categorie_2:
+		if e.Category.Name == self.nom_categorie_1 or e.Category.Name == self.nom_categorie_2 or e.Category.Name == self.nom_categorie_3 or e.Category.Name == self.nom_categorie_4:
 			return True
 		else:
 			return False
@@ -51,11 +54,12 @@ class Mult_Category(Selection.ISelectionFilter):
 		return true
 
 #SELECT SURFACE ELEMENT
-sel1 = uidoc.Selection.PickObject(Selection.ObjectType.Element, 'Choose Element')
-el1 = doc.GetElement(sel1)
+sel1 = uidoc.Selection.PickObjects(Selection.ObjectType.Element,  Mult_Category('Structural Columns', 'Floors', 'Structural Framing','Walls'))
+els1 = [doc.GetElement( elId ) for elId in sel1]
 
 t = Transaction(doc, 'selection')
 t.Start()
-par1 = el1.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
-par1.Set('')
+for i in els1:
+	par1 = i.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
+	par1.Set('Text_1')
 t.Commit()
