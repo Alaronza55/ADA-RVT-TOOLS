@@ -1,32 +1,33 @@
-import clr
-clr.AddReference("RevitServices")
-clr.AddReference("RevitAPI")
-clr.AddReference("RevitNodes")
+import sys
+from Autodesk.Revit.DB import *
+from pyrevit import forms, revit
 
-from RevitServices.Persistence import DocumentManager
-from Autodesk.Revit.DB import FilteredElementCollector, ElementIntersectsElementFilter
 
-# Get the active document
-doc = DocumentManager.Instance.CurrentDBDocument
+doc     =   __revit__.ActiveUIDocument.Document
+uidoc   =   __revit__.ActiveUIDocument
+app     =   __revit__.Application
 
-# Define a function to check for intersection between two elements
-def elements_intersect(element1_id, element2_id):
-    # Get elements by their IDs
-    element1 = doc.GetElement(element1_id)
-    element2 = doc.GetElement(element2_id)
+
+with forms.WarningBar(title='Pick Element:'):
+    element = revit.pick_element()
     
-    # Create an ElementIntersectsElementFilter
-    intersection_filter = ElementIntersectsElementFilter(element2)
-    
-    # Check if the first element intersects with the second element
-    return intersection_filter.PassesFilter(element1)
+element_type = type(element)
 
-# Example element IDs (replace with actual IDs from your Revit model)
-element1_id = 12345  # Replace with the actual element ID
-element2_id = 67890  # Replace with the actual element ID
+print(element_type)
+if element_type != Wall:
+    forms.alert('You were supposed to pick a Wall.', exitscript=True)
 
-# Call the function and print the result
-if elements_intersect(element1_id, element2_id):
-    print("The elements intersect.")
-else:
-    print("The elements do not intersect.")
+e_cat                   =         element.Category.Name
+e_id                    =         element.Id
+e_level_id              =         element.LevelId
+e_wall_type             =         element.WallType
+e_width                 =         element.Width
+get_level               =         doc.GetElement(e_level_id)
+e_level_name            =         get_level.Name
+
+print('Element Category:          {}'.format(e_cat       ))
+print('Element ID:                {}'.format(e_id        ))
+print('Level ID of Element :      {}'.format(e_level_id  ))
+print('Level Name of Element :    {}'.format(e_level_name))
+print('Wall Type :                {}'.format(e_wall_type ))
+print('Element Width :            {}'.format(e_width     )) 

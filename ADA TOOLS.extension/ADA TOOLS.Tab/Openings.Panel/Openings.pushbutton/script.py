@@ -122,6 +122,9 @@ else:
 
 
 
+
+intersect = BooleanOperationsUtils.ExecuteBooleanOperation(elements_1, elements_2, BooleanOperationsType.Intersect)
+
 #PASS PARAMETER
 # t = Transaction(doc, 'selection')
 # t.Start()
