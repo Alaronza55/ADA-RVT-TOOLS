@@ -53,49 +53,74 @@ class Mult_Category1(Selection.ISelectionFilter):
 		else:
 			return False
 	def AllowReference(self, ref, point):
-		return true
+		return True
 
-# class Single_Category(Selection.ISelectionFilter):
-# 	def __init__(self, nom_categorie):
-# 		self.nom_categorie = nom_categorie
-# 	def AllowElement(self, e):
-# 		if e.Category.Name == self.nom_categorie:
-# 			return True
-# 		else:
-# 			return False
-# 	def AllowReference(self, ref, point):
-# 		return true
+class Mult_Category2(Selection.ISelectionFilter):
+	def __init__(self, nom_categorie_1, nom_categorie_2):
+		self.nom_categorie_1 = nom_categorie_1
+		self.nom_categorie_2 = nom_categorie_2
+
+	def AllowElement(self, e):
+		if e.Category.Name == self.nom_categorie_1 or e.Category.Name == self.nom_categorie_2 :
+			return True
+		else:
+			return False
+	def AllowReference(self, ref, point):
+		return True
 
 #SELECT SURFACE ELEMENT
 # Prompt the user to select multiple elements
 try:
-    sel1 = uidoc.Selection.PickObjects(ObjectType.Element,  Mult_Category1('Structural Columns', 'Floors', 'Structural Framing','Walls'))
+    selection1 = uidoc.Selection.PickObjects(ObjectType.Element,  Mult_Category1('Structural Columns', 'Floors', 'Structural Framing','Walls'))
 except Exception as e:
     print("Selection canceled.")
     selection = None
 
 # Check if the user made a selection
-if not sel1:
+if not selection1:
     print("No elements selected.")
 else:
     # Create a list to store element IDs
-    element_ids = []
+    element_ids_1 = []
+    elements_1 = []
 
     # Loop through the selected elements to retrieve their IDs
-    for sel in sel1:
+    for sel in selection1:
         # Get the element by its Reference
         element = doc.GetElement(sel.ElementId)
         if element:
             # Append the ElementId's IntegerValue (the actual ID number)
-            element_ids.append(sel.ElementId.IntegerValue)
-
-    # Print the selected element IDs
-    print("Selected Element IDs:", element_ids)
-
-
+            element_ids_1.append(sel.ElementId.IntegerValue)
 
 #SELECT INTERSECTING ELEMENT
-# sel2 = uidoc.Selection.PickObjects(Selection.ObjectType.Element,  Single_Category('Pipes'))
+# Second selection: Prompt the user to select a second set of elements from allowed categories
+try:
+    selection2 = uidoc.Selection.PickObjects(ObjectType.Element, Mult_Category2('Pipes','Ducts'))
+except Exception as e:
+    print("Second selection canceled.")
+    selection2 = None
+
+# Check if the user made a second selection
+if not selection2:
+    print("No elements selected for the second selection.")
+else:
+    # Create a list to store the second set of element IDs
+    element_ids_2 = []
+    elements_2 = []
+
+    # Loop through the second set of selected elements to retrieve their IDs
+    for sel in selection2:
+        # Get the element by its Reference
+        element = doc.GetElement(sel.ElementId)
+        if element:
+            # Append the ElementId's IntegerValue (the actual ID number)
+            element_ids_2.append(sel.ElementId.IntegerValue)
+
+    # Print the second set of selected element IDs
+    print("Selected Element IDs:", element_ids_1)
+    print("Second set of selected Element IDs:", element_ids_2)
+
+
 
 #PASS PARAMETER
 # t = Transaction(doc, 'selection')
@@ -104,35 +129,4 @@ else:
 # 	par1 = i.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
 # 	par1.Set('Text_1')
 # t.Commit()
-
-# # Retrieve the geometry of the SURFACE ELEMENT
-# def get_geometry_of_element(sel1):
-#     options = Options()
-#     geom_element = elem.get_Geometry(options)
-    
-#     # Extracting geometry info, if available
-#     geometry_data = []
-#     if geom_element is not None:
-#         for geom_obj in geom_element:
-#             # Here we retrieve basic geometry info (you can extract more detailed data)
-#             geometry_data.append(str(geom_obj))
-#     return geometry_data
-
-# # Retrieve the geometry of the INTERSECTING ELEMENT
-# def get_geometry_of_element(sel2):
-#     options = Options()
-#     geom_element = elem.get_Geometry(options)
-    
-#     # Extracting geometry info, if available
-#     geometry_data = []
-#     if geom_element is not None:
-#         for geom_obj in geom_element:
-#             # Here we retrieve basic geometry info (you can extract more detailed data)
-#             geometry_data.append(str(geom_obj))
-#     return geometry_data
-
-
-
-
-
 
