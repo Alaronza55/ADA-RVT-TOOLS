@@ -1,9 +1,10 @@
+# -*- coding: utf-8 -*-
 """
 Add Multiple Views to a Sheet
 This script adds selected views to a selected sheet at specified positions.
 """
 __title__ = 'Add Views\nto Sheet'
-__author__ = 'AI Assistant'
+__author__ = 'Assistant'
 
 import clr
 from Autodesk.Revit.DB import (
@@ -120,7 +121,7 @@ if __name__ == "__main__":
         for i, view in enumerate(selected_views):
             # Skip views that can't be added to this sheet
             if not Viewport.CanAddViewToSheet(doc, sheet.Id, view.Id):
-                output.print_md("⚠️ Skipping view: {0} (already on a sheet or can't be placed)".format(view.Name))
+                output.print_md("Warning: Skipping view: {0} (already on a sheet or can't be placed)".format(view.Name))
                 continue
             
             # Position for the viewport
@@ -142,7 +143,7 @@ if __name__ == "__main__":
         
         t.Commit()
         
-        output.print_md("# ✅ Success!")
+        output.print_md("# Success!")
         output.print_md("Added {0} views to sheet {1} - {2}".format(
             success_count,
             sheet.SheetNumber, 
@@ -151,5 +152,5 @@ if __name__ == "__main__":
     
     except Exception as e:
         t.RollBack()
-        output.print_md("# ❌ Failed to add views to sheet")
+        output.print_md("# Failed to add views to sheet")
         output.print_md("Error: {0}".format(str(e)))
