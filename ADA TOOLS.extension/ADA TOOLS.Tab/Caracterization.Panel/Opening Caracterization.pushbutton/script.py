@@ -2,7 +2,7 @@
 """
 Openings Caracterisation
 """
-__title__ = 'Openings Caracterisation'
+#__title__ = 'Openings Caract#erisation'
 __author__ = 'ADA55'
 
 
