@@ -63,7 +63,7 @@ for element in face_opening_models:
         element_id = element.Id.IntegerValue
         
         # Update element ID parameter
-        id_param = element.LookupParameter("VAL_Element_ID_Instance")
+        id_param = element.LookupParameter("VAL_Element ID_Instance")
         if id_param:
             try:
                 id_param.Set(element_id)
