@@ -1,13 +1,31 @@
 # -*- coding: utf-8 -*-
-__title__   = "Element Sections Generator"
-__version__ = 'Version = 0.2 (Beta)'
-__doc__ = """Date    = 31.03.2024
+__title__ = "Create Sections Tool"   # Name of the button displayed in Revit
+__author__ = "Almog Davidson"
+__doc__ = """Version = 1.0
 _____________________________________________________________________
 Description:
-...
+
+Create 3D Generic Model at the intersection between a Surface 
+(Horizontal or Vertical) and a Pipe. 
+
+Future Features / Roadmap :
+- Make same process between two elements in link
+- Integrate Conducts - HVAC Ducts
+- Set Offset to Generic Model if needed.
+- Make auto caracerization of opening
+_____________________________________________________________________
+How-to:
+
+1. Select Element of surface
+2. Select Pipe
 
 _____________________________________________________________________
-Author: Erik Frits"""
+Last update:
+- [20.10.2024] - 1.0 First coding attempt
+_____________________________________________________________________
+Author:     Almog Davidson"""
+
+
 # ╦╔╦╗╔═╗╔═╗╦═╗╔╦╗╔═╗
 # ║║║║╠═╝║ ║╠╦╝ ║ ╚═╗
 # ╩╩ ╩╩  ╚═╝╩╚═ ╩ ╚═╝ IMPORTS
@@ -35,28 +53,6 @@ doc       = __revit__.ActiveUIDocument.Document #type: Document
 
 output = script.get_output()
 
-
-# ╔═╗╦ ╦╔╗╔╔═╗╔╦╗╦╔═╗╔╗╔╔═╗
-# ╠╣ ║ ║║║║║   ║ ║║ ║║║║╚═╗
-# ╚  ╚═╝╝╚╝╚═╝ ╩ ╩╚═╝╝╚╝╚═╝
-def place_views_on_sheet(doc, views, new_sheet):
-    positions = [
-        XYZ(-0.85,0.65,0),
-        XYZ(-0.5,0.65,0),
-        XYZ(-0.85, 0.35,0)
-    ]
-
-    for n, view in enumerate(views):
-
-
-        if Viewport.CanAddViewToSheet(doc, new_sheet.Id, view.Id):
-            # ⏺️ Define position for placing views
-            pt = positions[n]
-
-            # 🖼️ Place Views on Sheets
-            viewport = Viewport.Create(doc, new_sheet.Id, view.Id, pt)
-
-
 # ╔═╗╦  ╔═╗╔═╗╔═╗╔═╗╔═╗
 # ║  ║  ╠═╣╚═╗╚═╗║╣ ╚═╗
 # ╚═╝╩═╝╩ ╩╚═╝╚═╝╚═╝╚═╝
@@ -82,13 +78,6 @@ class ElementProperties():
 
         else:
             self.get_generic_properties()
-
-        # elif el.Category.Id == ElementId(BuiltInCategory.OST_Windows):
-        #     self.get_window_properties()
-        #
-        # elif el.Category.Id == ElementId(BuiltInCategory.OST_Doors):
-        #     self.get_door_properties()
-
 
     # ╦ ╦╔═╗╦  ╦  ╔═╗
     # ║║║╠═╣║  ║  ╚═╗
@@ -213,7 +202,6 @@ class ElementProperties():
                     print(traceback.format_exc())
             return
 
-
 # ╔╦╗╔═╗╦╔╗╔
 # ║║║╠═╣║║║║
 # ╩ ╩╩ ╩╩╝╚╝
@@ -243,7 +231,6 @@ selected_opts = select_from_dict(select_opts,
                             label = 'Select Categories to Pick Elements',
                             version = __version__,
                             SelectMultiple = True)
-
 
 #⬇️ Flatten List to break nested lists
 def flatten_list(lst):
@@ -418,7 +405,3 @@ except:
 
         print(traceback.format_exc())
     # output.log_error(traceback.format_exc())
-
-
-
-
