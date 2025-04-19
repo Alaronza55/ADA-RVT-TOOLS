@@ -132,18 +132,18 @@ class SectionGenerator():
             # The cross product is defined as the vector which is perpendicular to both vectors
 
         #2️⃣ CROSS-SECTION
-        elif mode.lower() == 'cross':
-            vector_cross = vector.CrossProduct(XYZ.BasisZ)
+        # elif mode.lower() == 'cross':
+        #     vector_cross = vector.CrossProduct(XYZ.BasisZ)
 
-            trans.BasisX = vector_cross
-            trans.BasisY = XYZ.BasisZ
-            trans.BasisZ = vector_cross.CrossProduct(XYZ.BasisZ)
+        #     trans.BasisX = vector_cross
+        #     trans.BasisY = XYZ.BasisZ
+        #     trans.BasisZ = vector_cross.CrossProduct(XYZ.BasisZ)
 
-        #3️⃣ - PLAN
-        elif mode.lower() == 'plan':
-            trans.BasisX = -vector
-            trans.BasisY = -XYZ.BasisZ.CrossProduct(-vector).Normalize()
-            trans.BasisZ = -XYZ.BasisZ
+        # #3️⃣ - PLAN
+        # elif mode.lower() == 'plan':
+        #     trans.BasisX = -vector
+        #     trans.BasisY = -XYZ.BasisZ.CrossProduct(-vector).Normalize()
+        #     trans.BasisZ = -XYZ.BasisZ
 
         return trans
 
@@ -166,16 +166,16 @@ class SectionGenerator():
             section_box.Min = XYZ(-half - self.offset,  -H_half - self.offset,   0)
             section_box.Max = XYZ(half + self.offset ,   H_half + self.offset,  D_half + self.offset)
 
-        elif  mode == 'cross':
-            #1️⃣ SectionBox for Elevation
-            section_box.Min = XYZ(-D_half - self.offset,  -H_half - self.offset, 0 )
-            section_box.Max = XYZ(D_half + self.offset ,   H_half + self.offset, W_half + self.offset)
-            # X - Width | Y - Height | Z - Depth
+        # elif  mode == 'cross':
+        #     #1️⃣ SectionBox for Elevation
+        #     section_box.Min = XYZ(-D_half - self.offset,  -H_half - self.offset, 0 )
+        #     section_box.Max = XYZ(D_half + self.offset ,   H_half + self.offset, W_half + self.offset)
+        #     # X - Width | Y - Height | Z - Depth
 
-        elif mode =='plan':
-            # 1️⃣ SectionBox for Elevation
-            section_box.Min = XYZ(-W_half - self.offset, -D_half - self.offset  , 0)
-            section_box.Max = XYZ(W_half + self.offset,  D_half + self.offset   , H_half + self.offset)
+        # elif mode =='plan':
+        #     # 1️⃣ SectionBox for Elevation
+        #     section_box.Min = XYZ(-W_half - self.offset, -D_half - self.offset  , 0)
+        #     section_box.Max = XYZ(W_half + self.offset,  D_half + self.offset   , H_half + self.offset)
 
 
         section_box.Transform = trans  # Apply Transform (Origin + XYZ Vectors)
@@ -204,18 +204,18 @@ class SectionGenerator():
         # Create Sections
         section_type_id = self.doc.GetDefaultElementTypeId(ElementTypeGroup.ViewTypeSection)
         section_elev    = ViewSection.CreateSection(self.doc, section_type_id, section_box_elev)
-        section_cross   = ViewSection.CreateSection(self.doc, section_type_id, section_box_cross)
-        section_plan    = ViewSection.CreateSection(self.doc, section_type_id, section_box_plan)
+        # section_cross   = ViewSection.CreateSection(self.doc, section_type_id, section_box_cross)
+        # section_plan    = ViewSection.CreateSection(self.doc, section_type_id, section_box_plan)
 
         # Create New Names
-        new_name_elev  = '{}_Elevation'.format(view_name_base)
-        new_name_cross = '{}_Cross'.format(view_name_base)
-        new_name_plan  = '{}_Plan'.format(view_name_base)
+        new_name_elev    = '{}_Elev'.format(view_name_base)
+        # new_name_cross = '{}_Cross'.format(view_name_base)
+        # new_name_plan  = '{}_Plan'.format(view_name_base)
 
         # Rename Views
         self.rename_view(section_elev,  new_name_elev)
-        self.rename_view(section_cross, new_name_cross)
-        self.rename_view(section_plan,  new_name_plan)
+        # self.rename_view(section_cross, new_name_cross)
+        # self.rename_view(section_plan,  new_name_plan)
 
 
         # # Print Linkify
@@ -225,8 +225,7 @@ class SectionGenerator():
         # print('Cross    : {}'.format(output.linkify(section_cross.Id)))
         # print('Plan     : {}'.format(output.linkify(section_plan.Id)))
 
-        return (section_elev, section_cross, section_plan)
-
+        return (section_elev)
 
 
 

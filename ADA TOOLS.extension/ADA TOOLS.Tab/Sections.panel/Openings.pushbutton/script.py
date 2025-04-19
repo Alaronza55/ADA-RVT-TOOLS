@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-__title__   = "Element Sections Generator"
+__title__   = "Element Section"
 __version__ = 'Version = 0.2 (Beta)'
 __doc__ = """Date    = 31.03.2024
 _____________________________________________________________________
@@ -320,6 +320,43 @@ sel_view_template = select_from_dict(dict_view_templates,
 if sel_view_template:
     sel_view_template = sel_view_template[0]
 
+#----------------------------------------------------------------------
+#5️⃣ Ask for Section View Type
+# Get all ViewFamilyTypes for Sections in the project
+section_types = []
+all_view_family_types = FilteredElementCollector(doc).OfClass(ViewFamilyType).WhereElementIsElementType().ToElements()
+
+# Filter manually for section types
+for vft in all_view_family_types:
+    if vft.ViewFamily == ViewFamily.Section:
+        section_types.append(vft)
+
+# Create a dictionary of section view types with names as keys
+dict_section_types = {}
+for vt in section_types:
+    name_param = vt.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)
+    if name_param:
+        dict_section_types[name_param.AsString()] = vt
+    else:
+        # Fallback to using element ID if name not available
+        dict_section_types[str(vt.Id.IntegerValue)] = vt
+
+# If no section types found, warn the user
+if not dict_section_types:
+    forms.alert('No section view types found in the project!', exitscript=True)
+
+#👉 Pick Selection Opts
+sel_section_type = select_from_dict(dict_section_types,
+                        title = __title__,
+                        label = 'Select Section View Type',
+                        version = __version__,
+                        SelectMultiple = False) #type: list
+
+if sel_section_type:
+    sel_section_type = sel_section_type[0]
+else:
+    # User cancelled, exit the script or handle accordingly
+    forms.alert('No section view type selected. Operation canceled.', exitscript=True)
 
 #----------------------------------------------------------------------
 #🔏 Transaction
@@ -355,46 +392,44 @@ with ProgressBar(cancellable=True) as pb:
                                                depth        = E.depth,
                                                depth_offset = E.depth_offset)
 
-            el_type   = doc.GetElement(el.GetTypeId())
+            el_type = doc.GetElement(el.GetTypeId())
             type_name = Element.Name.GetValue(el_type)
-            cat_name  = el.Category.Name
+            cat_name = el.Category.Name
 
-            view_name_base  = '{}_{}'.format(type_name,el.Id)
-            elev,cross,plan = gen.create_sections(view_name_base=view_name_base)
+            # Get host properly
+            if isinstance(el, FamilyInstance):
+                host_el = el.Host
+                if host_el:
+                    host_name = host_el.Name if hasattr(host_el, "Name") else host_el.GetType().Name
+                else:
+                    # Try to get level if available
+                    level_id = el.LevelId
+                    if level_id and level_id.IntegerValue != -1:
+                        level = doc.GetElement(level_id)
+                        host_name = level.Name
+                    else:
+                        host_name = "No host"
+            else:
+                # Check if element has a level property
+                if hasattr(el, "Level") and el.Level is not None:
+                    host_name = el.Level.Name
+                else:
+                    host_name = "N/A"
 
+            view_name_base = '{} - {}'.format(host_name, type_name)
+            elev = gen.create_sections(view_name_base=view_name_base)
 
             # Set Sections ViewTemplate
             if sel_view_template:
-                elev.ViewTemplateId  = sel_view_template.Id
-                cross.ViewTemplateId = sel_view_template.Id
-                plan.ViewTemplateId  = sel_view_template.Id
-
-
-
-            #6️⃣ Place Views on a New Sheet
-            default_title_block_id = doc.GetDefaultFamilyTypeId(ElementId(BuiltInCategory.OST_TitleBlocks))
-            new_sheet = ViewSheet.Create(doc, default_title_block_id)
-            place_views_on_sheet(doc, [elev, cross, plan], new_sheet)
-
-            # 📝 Rename Sheets
-            sheet_number = 'EF_{}_{}'.format(type_name,el.Id)
-            sheet_name   = '{} - Elev, Cross, Plan'.format(cat_name)
-
-            #💡 Ensure Unique SheetNumber
-            for i in range(10):
-                try:
-                    new_sheet.SheetNumber = sheet_number
-                    new_sheet.Name        = sheet_name
-                    break
-                except:
-                    sheet_number += '*'
-
+                elev.ViewTemplateId = sel_view_template.Id
 
             #✅ Create Table Row Data
-            new_views.append( [new_sheet, elev, cross, plan] )
+            new_views.append([elev])
 
-            row = [cat_name,type_name, output.linkify(el.Id), output.linkify(new_sheet.Id), output.linkify(elev.Id), output.linkify(cross.Id), output.linkify(plan.Id) ]
+            row = [cat_name, type_name, host_name, output.linkify(el.Id), output.linkify(elev.Id)]
             table_data.append(row)
+
+
 
         except:
             # output.log_error(traceback.format_exc())
@@ -411,14 +446,13 @@ try:
     #👀 DISPLAY TABLE
     output.print_table(table_data=table_data,
                        title="New Sections",
-                       columns=["Category","TypeName","Element", "Sheet", "Elevation", "Cross", "Plan"])
+                       columns=["Category","TypeName","Schedule Level","Element", "Elevation"])
 except:
     if EXEC_PARAMS.debug_mode:
         import traceback
 
         print(traceback.format_exc())
     # output.log_error(traceback.format_exc())
-
 
 
 

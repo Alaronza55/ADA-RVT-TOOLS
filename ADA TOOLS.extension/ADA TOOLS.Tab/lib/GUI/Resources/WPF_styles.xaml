@@ -3,23 +3,23 @@
                     xmlns:local="clr-namespace:Common.WPF_styles">
 
             <!-->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>[COLOURS]-->
-            <SolidColorBrush x:Key="header_background"  Color="#0f0f2d" />
+            <SolidColorBrush x:Key="header_background"  Color="#0b0b09" />
 
             <SolidColorBrush x:Key="text_white"         Color="#E5E4E2" />
-            <SolidColorBrush x:Key="text_gray"          Color="Gray" />
-            <SolidColorBrush x:Key="text_magenta"       Color="#EE82EE" />
+            <SolidColorBrush x:Key="text_gray"          Color="#f6c955" />
+            <SolidColorBrush x:Key="text_magenta"       Color="#f6c955" />
 
             <SolidColorBrush x:Key="button_fg_normal"   Color="White" />
-            <SolidColorBrush x:Key="button_bg_normal"   Color="#39385D" />
-            <SolidColorBrush x:Key="button_bg_hover"    Color="#FF4C70" />
+            <SolidColorBrush x:Key="button_bg_normal"   Color="#c5a144" />
+            <SolidColorBrush x:Key="button_bg_hover"    Color="#ae8e3c" />
 
-            <SolidColorBrush x:Key="border_magenta"     Color="#EE82EE" />
-            <SolidColorBrush x:Key="border_blue"     Color="DodgerBlue" />
+            <SolidColorBrush x:Key="border_magenta"     Color="#f6c955" />
+            <SolidColorBrush x:Key="border_blue"     Color="#f6c955" />
 
             <SolidColorBrush x:Key="uncheckbox_checked_colour"     Color="Gray" />
-            <SolidColorBrush x:Key="checkbox_checked_colour"     Color="#EE82EE" />
+            <SolidColorBrush x:Key="checkbox_checked_colour"     Color="#f6c955" />
 
-            <SolidColorBrush x:Key="footer_donate"     Color="#FF4C70" />
+            <SolidColorBrush x:Key="footer_donate"     Color="#0b0b09" />
 
 
 
@@ -152,12 +152,12 @@
                                     <Border x:Name="Border" Width="15" Height="15" CornerRadius="2" BorderThickness="0">
                                         <Border.Background>
                                             <LinearGradientBrush StartPoint="0,1" EndPoint="1,0">
-                                                <GradientStop Color= "#88FC467B" Offset="1" />
-                                                <GradientStop Color= "#993F5EFB" Offset="0" />
+                                                <GradientStop Color= "#deb64d" Offset="1" />
+                                                <GradientStop Color= "#deb64d" Offset="0" />
                                             </LinearGradientBrush>
                                         </Border.Background>
                                         <Path Width="9" Height="9" x:Name="CheckMark" SnapsToDevicePixels="False"
-                                              Stroke="Pink" StrokeThickness="2" Data="M 0 4 L 3 8 8 0" />
+                                              Stroke="#171512" StrokeThickness="2" Data="M 0 4 L 3 8 8 0" />
                                     </Border>
                                 </BulletDecorator.Bullet>
                                 <ContentPresenter Margin="4,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Left"
@@ -171,10 +171,10 @@
                                     <Setter TargetName="CheckMark" Property="Data" Value="M 0 8 L 8 0" />
                                 </Trigger>
                                 <Trigger Property="IsMouseOver" Value="true">
-                                    <Setter TargetName="Border" Property="Background" Value="#FF131313" />
+                                    <Setter TargetName="Border" Property="Background" Value="#f6c955" />
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="false">
-                                    <Setter TargetName="CheckMark" Property="Stroke" Value="#FF6C6C6C"/>
+                                    <Setter TargetName="CheckMark" Property="Stroke" Value="#deb64d"/>
                                     <Setter Property="Foreground" Value="Gray"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
