@@ -396,6 +396,9 @@ with ProgressBar(cancellable=True) as pb:
             type_name = Element.Name.GetValue(el_type)
             cat_name = el.Category.Name
 
+            el_user_variable = el.LookupParameter("VAL_Identifiant PRS")
+            param_value = el_user_variable.AsString() if (el_user_variable and el_user_variable.HasValue) else "Not found"
+            
             # Get host properly
             if isinstance(el, FamilyInstance):
                 host_el = el.Host
@@ -416,7 +419,7 @@ with ProgressBar(cancellable=True) as pb:
                 else:
                     host_name = "N/A"
 
-            view_name_base = '{} - {}'.format(host_name, type_name)
+            view_name_base = '{} - {}'.format(host_name, param_value)
             elev = gen.create_sections(view_name_base=view_name_base)
 
             # Set Sections ViewTemplate
@@ -426,7 +429,7 @@ with ProgressBar(cancellable=True) as pb:
             #✅ Create Table Row Data
             new_views.append([elev])
 
-            row = [cat_name, type_name, host_name, output.linkify(el.Id), output.linkify(elev.Id)]
+            row = [cat_name, param_value, host_name, output.linkify(el.Id), output.linkify(elev.Id)]
             table_data.append(row)
 
 
@@ -446,7 +449,7 @@ try:
     #👀 DISPLAY TABLE
     output.print_table(table_data=table_data,
                        title="New Sections",
-                       columns=["Category","TypeName","Schedule Level","Element", "Elevation"])
+                       columns=["Category","Unique ID","Schedule Level","Element", "Elevation"])
 except:
     if EXEC_PARAMS.debug_mode:
         import traceback

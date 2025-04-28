@@ -205,3 +205,178 @@ print("MEP Element ID:")
 for i, elem in enumerate(selected_elems_MEP):
     elem_id_MEP = elem.Id.IntegerValue
     print(elem_id_MEP)
+
+#----------------------------------------------------------------------
+
+# def get_solids_from_element(element):
+#     """Gets all solids from a Revit element"""
+    
+#     solids = []  # Initialize as an empty list
+#     opts = Options()
+#     opts.ComputeReferences = True
+#     opts.DetailLevel = ViewDetailLevel.Fine
+    
+#     geometry = element.get_Geometry(opts)
+    
+#     if geometry:
+#         for geo_obj in geometry:
+#             if isinstance(geo_obj, Solid) and geo_obj.Volume > 0:
+#                 solids.append(geo_obj)
+#             elif isinstance(geo_obj, GeometryInstance):
+#                 instance_geometry = geo_obj.GetInstanceGeometry()
+#                 for instance_geo_obj in instance_geometry:
+#                     if isinstance(instance_geo_obj, Solid) and instance_geo_obj.Volume > 0:
+#                         solids.append(instance_geo_obj)
+                    
+#     return solids
+
+# def analyze_face(face, index):
+#     """Analyzes a face and returns information about it"""
+#     face_info = {
+#         "index": index,
+#         "type": face.__class__.__name__,
+#         "area": face.Area,
+#         "edges": []
+#     }
+    
+#     # Get face-specific properties
+#     if isinstance(face, PlanarFace):
+#         face_info["normal"] = face.FaceNormal  # Use FaceNormal instead of Normal
+#         face_info["origin"] = face.Origin
+#     elif isinstance(face, CylindricalFace):
+#         face_info["axis"] = face.Axis
+#         face_info["radius"] = face.Radius
+    
+#     # Get edge information
+#     for edge in face.EdgeLoops.Item[0]:
+#         edge_info = {
+#             "type": edge.__class__.__name__,
+#             "length": edge.AsCurve().Length,
+#             "start": edge.AsCurve().GetEndPoint(0),
+#             "end": edge.AsCurve().GetEndPoint(1)
+#         }
+#         face_info["edges"].append(edge_info)
+    
+#     return face_info
+
+
+
+
+# def print_face_info(face_info):
+#     """Prints face information in a structured format with metric units"""
+#     indent = "    "
+    
+#     output.print_md("### Face #{} - {}".format(face_info["index"] + 1, face_info["type"]))
+    
+#     # Convert area from sq ft to sq m (1 sq ft = 0.092903 sq m)
+#     area_in_sqm = face_info["area"] * 0.092903
+#     output.print_md("**Area:** {:.4f} sq m".format(area_in_sqm))
+    
+#     # Print face-specific properties
+#     if "normal" in face_info:
+#         normal = face_info["normal"]
+#         output.print_md("**Normal Vector:** ({:.4f}, {:.4f}, {:.4f})".format(normal.X, normal.Y, normal.Z))
+    
+#     if "origin" in face_info:
+#         origin = face_info["origin"]
+#         # Convert coordinates from ft to m (1 ft = 0.3048 m)
+#         x_m = origin.X * 0.3048
+#         y_m = origin.Y * 0.3048
+#         z_m = origin.Z * 0.3048
+#         output.print_md("**Origin Point:** ({:.4f} m, {:.4f} m, {:.4f} m)".format(x_m, y_m, z_m))
+    
+#     if "axis" in face_info:
+#         axis = face_info["axis"]
+#         output.print_md("**Axis Direction:** ({:.4f}, {:.4f}, {:.4f})".format(axis.X, axis.Y, axis.Z))
+    
+#     if "radius" in face_info:
+#         # Make sure radius is a number before formatting
+#         radius = face_info["radius"]
+#         if isinstance(radius, (int, float)):
+#             # Convert radius from ft to m
+#             radius_m = radius * 0.3048
+#             output.print_md("**Radius:** {:.4f} m".format(radius_m))
+#         else:
+#             output.print_md("**Radius:** {}".format(radius))
+    
+#     # Print edge information
+#     output.print_md("**Edges:** {}".format(len(face_info["edges"])))
+#     for i, edge in enumerate(face_info["edges"]):
+#         # Convert length from ft to m
+#         length_m = edge["length"] * 0.3048
+#         output.print_md("{}Edge #{} - {} (Length: {:.4f} m)".format(
+#             indent, i + 1, edge["type"], length_m))
+        
+#         start = edge["start"]
+#         # Convert coordinates from ft to m
+#         start_x_m = start.X * 0.3048
+#         start_y_m = start.Y * 0.3048
+#         start_z_m = start.Z * 0.3048
+#         output.print_md("{}    Start: ({:.4f} m, {:.4f} m, {:.4f} m)".format(
+#             indent, start_x_m, start_y_m, start_z_m))
+        
+#         end = edge["end"]
+#         # Convert coordinates from ft to m
+#         end_x_m = end.X * 0.3048
+#         end_y_m = end.Y * 0.3048
+#         end_z_m = end.Z * 0.3048
+#         output.print_md("{}    End: ({:.4f} m, {:.4f} m, {:.4f} m)".format(
+#             indent, end_x_m, end_y_m, end_z_m))
+
+
+# # Get solids from all structural elements
+# structural_solids = []
+# for elem in selected_elems_structural:
+#     structural_solids.extend(get_solids_from_element(elem))
+
+# # Get solids from all MEP elements
+# mep_solids = []
+# for elem in selected_elems_MEP:
+#     mep_solids.extend(get_solids_from_element(elem))
+
+# def main():
+#     # Find intersections
+#     intersection_found = False
+#     intersection_count = 0
+
+#     for i, struct_solid in enumerate(structural_solids):
+#         for j, mep_solid in enumerate(mep_solids):
+#             try:
+#                 # Execute boolean operation to find intersection
+#                 intersection_solid = BooleanOperationsUtils.ExecuteBooleanOperation(
+#                     struct_solid, mep_solid, BooleanOperationsType.Intersect)
+                
+#                 if intersection_solid and intersection_solid.Volume > 0:
+#                     intersection_found = True
+#                     intersection_count += 1
+                    
+#                     output.print_md("---")
+#                     output.print_md("## Intersection #{} (Structural Solid #{} ∩ MEP Solid #{})".format(
+#                         intersection_count, i+1, j+1))
+#                     output.print_md("**Volume:** {:.4f} cubic ft".format(intersection_solid.Volume))
+                    
+#                     # Analyze faces of the intersection solid
+#                     face_count = 0
+#                     for face in intersection_solid.Faces:
+#                         face_info = analyze_face(face, face_count)
+#                         print_face_info(face_info)
+#                         face_count += 1
+                    
+#                     if face_count == 0:
+#                         output.print_md("⚠️ No faces found in the intersection solid.")
+            
+#             except Exception as e:
+#                 output.print_md("⚠️ **Error in intersection calculation:** {}".format(str(e)))
+#                 continue
+
+#     if not intersection_found:
+#         output.print_md("❌ **No intersection found between the selected elements.**")
+#         output.print_md("The structural and MEP elements do not intersect geometrically.")
+
+# # Call the main function at the end of your script
+# if __name__ == "__main__":
+#     try:
+#         main()
+#     except Exception as e:
+#         print("Error: {}".format(str(e)))
+#         print(traceback.format_exc())
