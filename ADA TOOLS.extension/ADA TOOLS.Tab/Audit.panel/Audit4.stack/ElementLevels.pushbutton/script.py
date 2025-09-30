@@ -34,75 +34,125 @@ def clean_text(text):
     except:
         return "Unknown"
 
-def get_element_level(element):
-    """Get the level associated with an element - with special handling for structural framing, planting, and generic models"""
+def get_parent_element(element):
+    """Get the parent element if this is a nested element"""
     try:
+        # Check if element has SuperComponent property (for nested elements)
+        if hasattr(element, 'SuperComponent') and element.SuperComponent:
+            return element.SuperComponent
+        
+        # For FamilyInstances, check if it's nested
+        if isinstance(element, DB.FamilyInstance):
+            # Check if it has a host family
+            if hasattr(element, 'Host') and element.Host:
+                # If the host is also a FamilyInstance, it might be a nested situation
+                if isinstance(element.Host, DB.FamilyInstance):
+                    return element.Host
+        
+        # Try to get parent through GetSubComponentIds (reverse lookup)
+        try:
+            # Get all FamilyInstances and check which one contains this as a subcomponent
+            all_family_instances = DB.FilteredElementCollector(doc).OfClass(DB.FamilyInstance).ToElements()
+            for family_instance in all_family_instances:
+                try:
+                    sub_component_ids = family_instance.GetSubComponentIds()
+                    if element.Id in sub_component_ids:
+                        return family_instance
+                except:
+                    continue
+        except:
+            pass
+            
+        return None
+    except:
+        return None
+
+def get_schedule_level_from_element(element, element_description=""):
+    """Generic function to get schedule level from an element"""
+    # Method 1: Try to find Schedule Level parameter by name
+    try:
+        all_params = element.Parameters
+        for param in all_params:
+            param_name = param.Definition.Name.lower()
+            if 'schedule level' in param_name or 'schedule_level' in param_name:
+                if param.HasValue:
+                    if param.StorageType == DB.StorageType.ElementId:
+                        element_id = param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element and hasattr(level_element, 'Name'):
+                                return clean_text(level_element.Name) + " (schedule level{})".format(element_description)
+                    elif param.StorageType == DB.StorageType.String:
+                        level_name = param.AsString()
+                        if level_name:
+                            return clean_text(level_name) + " (schedule level{})".format(element_description)
+                    elif param.StorageType == DB.StorageType.Double or param.StorageType == DB.StorageType.Integer:
+                        level_value = param.AsValueString()
+                        if level_value:
+                            return clean_text(level_value) + " (schedule level{})".format(element_description)
+    except:
+        pass
+    
+    # Method 2: Try built-in schedule level parameter
+    try:
+        schedule_level_param = element.get_Parameter(DB.BuiltInParameter.SCHEDULE_LEVEL_PARAM)
+        if schedule_level_param and schedule_level_param.HasValue:
+            if schedule_level_param.StorageType == DB.StorageType.ElementId:
+                element_id = schedule_level_param.AsElementId()
+                if element_id != DB.ElementId.InvalidElementId:
+                    level_element = doc.GetElement(element_id)
+                    if level_element:
+                        return clean_text(level_element.Name) + " (schedule level{})".format(element_description)
+            elif schedule_level_param.StorageType == DB.StorageType.String:
+                level_name = schedule_level_param.AsString()
+                if level_name:
+                    return clean_text(level_name) + " (schedule level{})".format(element_description)
+    except:
+        pass
+    
+    # Method 3: Check shared parameters for schedule level
+    try:
+        for param in element.Parameters:
+            if param.IsShared:
+                param_name = param.Definition.Name.lower()
+                if 'schedule level' in param_name or 'schedul' in param_name and 'level' in param_name:
+                    if param.HasValue:
+                        if param.StorageType == DB.StorageType.ElementId:
+                            element_id = param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element and hasattr(level_element, 'Name'):
+                                    return clean_text(level_element.Name) + " (schedule level{})".format(element_description)
+                        elif param.StorageType == DB.StorageType.String:
+                            level_name = param.AsString()
+                            if level_name:
+                                return clean_text(level_name) + " (schedule level{})".format(element_description)
+    except:
+        pass
+    
+    return None
+
+def get_element_level(element):
+    """Get the level associated with an element - with special handling for structural framing, planting, generic models, plumbing fixtures, mechanical equipment, and nested elements"""
+    try:
+        # First check if this is a nested element and handle accordingly
+        parent_element = get_parent_element(element)
+        
         # Special handling for Generic Models - check Schedule Level first
         if element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_GenericModel):
             
-            # Method 1: Try to find Schedule Level parameter by name
-            try:
-                all_params = element.Parameters
-                for param in all_params:
-                    param_name = param.Definition.Name.lower()
-                    if 'schedule level' in param_name or 'schedule_level' in param_name:
-                        if param.HasValue:
-                            if param.StorageType == DB.StorageType.ElementId:
-                                element_id = param.AsElementId()
-                                if element_id != DB.ElementId.InvalidElementId:
-                                    level_element = doc.GetElement(element_id)
-                                    if level_element and hasattr(level_element, 'Name'):
-                                        return clean_text(level_element.Name) + " (schedule level)"
-                            elif param.StorageType == DB.StorageType.String:
-                                level_name = param.AsString()
-                                if level_name:
-                                    return clean_text(level_name) + " (schedule level)"
-                            elif param.StorageType == DB.StorageType.Double or param.StorageType == DB.StorageType.Integer:
-                                # Sometimes schedule level might be stored as text that needs to be converted
-                                level_value = param.AsValueString()
-                                if level_value:
-                                    return clean_text(level_value) + " (schedule level)"
-            except:
-                pass
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
             
-            # Method 2: Try built-in schedule level parameter
-            try:
-                schedule_level_param = element.get_Parameter(DB.BuiltInParameter.SCHEDULE_LEVEL_PARAM)
-                if schedule_level_param and schedule_level_param.HasValue:
-                    if schedule_level_param.StorageType == DB.StorageType.ElementId:
-                        element_id = schedule_level_param.AsElementId()
-                        if element_id != DB.ElementId.InvalidElementId:
-                            level_element = doc.GetElement(element_id)
-                            if level_element:
-                                return clean_text(level_element.Name) + " (schedule level)"
-                    elif schedule_level_param.StorageType == DB.StorageType.String:
-                        level_name = schedule_level_param.AsString()
-                        if level_name:
-                            return clean_text(level_name) + " (schedule level)"
-            except:
-                pass
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
             
-            # Method 3: Check shared parameters for schedule level
-            try:
-                for param in element.Parameters:
-                    if param.IsShared:
-                        param_name = param.Definition.Name.lower()
-                        if 'schedule level' in param_name or 'schedul' in param_name and 'level' in param_name:
-                            if param.HasValue:
-                                if param.StorageType == DB.StorageType.ElementId:
-                                    element_id = param.AsElementId()
-                                    if element_id != DB.ElementId.InvalidElementId:
-                                        level_element = doc.GetElement(element_id)
-                                        if level_element and hasattr(level_element, 'Name'):
-                                            return clean_text(level_element.Name) + " (schedule level)"
-                                elif param.StorageType == DB.StorageType.String:
-                                    level_name = param.AsString()
-                                    if level_name:
-                                        return clean_text(level_name) + " (schedule level)"
-            except:
-                pass
-            
-            # Method 4: Standard level parameters for generic models
+            # Standard level parameters for generic models
             generic_level_params = [
                 DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
                 DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
@@ -121,6 +171,116 @@ def get_element_level(element):
                                 return clean_text(level_element.Name)
                 except:
                     continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in generic_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+
+        # Special handling for Plumbing Fixtures - check Schedule Level first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_PlumbingFixtures):
+            
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Standard level parameters for plumbing fixtures
+            plumbing_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in plumbing_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in plumbing_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+
+        # Special handling for Mechanical Equipment - check Schedule Level first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_MechanicalEquipment):
+            
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Standard level parameters for mechanical equipment
+            mech_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in mech_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in mech_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
 
         # Special handling for Planting category - check Host first
         elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_Planting):
@@ -161,6 +321,15 @@ def get_element_level(element):
                             return clean_text(level.Name) + " (from host)"
             except:
                 pass
+            
+            # If nested, try parent element
+            if parent_element:
+                try:
+                    parent_level = get_element_level(parent_element)
+                    if parent_level and parent_level != "No Level":
+                        return parent_level + " (from parent)"
+                except:
+                    pass
             
             # Method 2: Try standard level parameters for planting
             planting_level_params = [
@@ -226,6 +395,20 @@ def get_element_level(element):
                 except:
                     continue
             
+            # If nested, try parent element
+            if parent_element:
+                for param_type in reference_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+            
             # Method 2: Try to get reference level by parameter name
             try:
                 all_params = element.Parameters
@@ -238,54 +421,6 @@ def get_element_level(element):
                                 level_element = doc.GetElement(element_id)
                                 if level_element and level_element.GetType().Name == "Level":
                                     return clean_text(level_element.Name)
-            except:
-                pass
-            
-            # Method 3: For structural framing, try to get start and end levels
-            try:
-                if hasattr(element, 'GetAnalyticalModel'):
-                    analytical_model = element.GetAnalyticalModel()
-                    if analytical_model:
-                        # Try to get the curve and calculate level from Z coordinate
-                        curve = analytical_model.GetCurve()
-                        if curve:
-                            start_point = curve.GetEndPoint(0)
-                            # Find closest level to this Z coordinate
-                            all_levels = DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements()
-                            closest_level = None
-                            min_distance = float('inf')
-                            
-                            for level in all_levels:
-                                distance = abs(level.Elevation - start_point.Z)
-                                if distance < min_distance:
-                                    min_distance = distance
-                                    closest_level = level
-                            
-                            if closest_level:
-                                return clean_text(closest_level.Name)
-            except:
-                pass
-            
-            # Method 4: Try location-based approach for structural framing
-            try:
-                location = element.Location
-                if hasattr(location, 'Curve'):
-                    curve = location.Curve
-                    if curve:
-                        start_point = curve.GetEndPoint(0)
-                        # Find the level that this element is closest to
-                        all_levels = DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements()
-                        if all_levels:
-                            # Sort levels by elevation
-                            sorted_levels = sorted(all_levels, key=lambda x: x.Elevation)
-                            
-                            # Find the appropriate level based on Z coordinate
-                            element_z = start_point.Z
-                            for i, level in enumerate(sorted_levels):
-                                # If element is above this level and below next level (or if it's the top level)
-                                if i == len(sorted_levels) - 1 or element_z < sorted_levels[i + 1].Elevation:
-                                    if element_z >= level.Elevation - 1.0:  # 1 foot tolerance below level
-                                        return clean_text(level.Name)
             except:
                 pass
 
@@ -312,15 +447,39 @@ def get_element_level(element):
             except:
                 continue
 
+        # If no level found on element and it's nested, try parent element
+        if parent_element:
+            for param_type in common_level_params:
+                try:
+                    level_param = parent_element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name) + " (from parent)"
+                except:
+                    continue
+
         # Try direct Level property
         if hasattr(element, 'Level') and element.Level:
             return clean_text(element.Level.Name)
+        
+        # If nested, try parent's direct Level property
+        if parent_element and hasattr(parent_element, 'Level') and parent_element.Level:
+            return clean_text(parent_element.Level.Name) + " (from parent)"
 
         # Try LevelId property
         if hasattr(element, 'LevelId') and element.LevelId != DB.ElementId.InvalidElementId:
             level = doc.GetElement(element.LevelId)
             if level:
                 return clean_text(level.Name)
+        
+        # If nested, try parent's LevelId property
+        if parent_element and hasattr(parent_element, 'LevelId') and parent_element.LevelId != DB.ElementId.InvalidElementId:
+            level = doc.GetElement(parent_element.LevelId)
+            if level:
+                return clean_text(level.Name) + " (from parent)"
 
         # For hosted elements, try to get level from host (general fallback)
         try:
@@ -437,10 +596,7 @@ def main():
     output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
     csv_filename = "Model_Elements_with_Levels.csv"
     file_path = os.path.join(output_folder, csv_filename)
-    
-    # Create the folder if it doesn't exist
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+
     try:
         # Create CSV file with explicit encoding
         with open(file_path, 'w') as f:
@@ -475,7 +631,10 @@ def main():
         message += "Special handling:\n"
         message += "- Structural Framing: Uses reference level when available\n"
         message += "- Planting: Checks host element level first, then calculates from position\n"
-        message += "- Generic Models: Checks Schedule Level parameter first, then standard level parameters\n\n"
+        message += "- Generic Models: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Plumbing Fixtures: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Mechanical Equipment: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Nested Elements: Checks parent element properties when child element has no level\n\n"
         message += "The CSV file can be opened in Excel or any spreadsheet application."
 
         forms.alert(message)
