@@ -35,10 +35,176 @@ def clean_text(text):
         return "Unknown"
 
 def get_element_level(element):
-    """Get the level associated with an element - with special handling for structural framing"""
+    """Get the level associated with an element - with special handling for structural framing, planting, and generic models"""
     try:
+        # Special handling for Generic Models - check Schedule Level first
+        if element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_GenericModel):
+            
+            # Method 1: Try to find Schedule Level parameter by name
+            try:
+                all_params = element.Parameters
+                for param in all_params:
+                    param_name = param.Definition.Name.lower()
+                    if 'schedule level' in param_name or 'schedule_level' in param_name:
+                        if param.HasValue:
+                            if param.StorageType == DB.StorageType.ElementId:
+                                element_id = param.AsElementId()
+                                if element_id != DB.ElementId.InvalidElementId:
+                                    level_element = doc.GetElement(element_id)
+                                    if level_element and hasattr(level_element, 'Name'):
+                                        return clean_text(level_element.Name) + " (schedule level)"
+                            elif param.StorageType == DB.StorageType.String:
+                                level_name = param.AsString()
+                                if level_name:
+                                    return clean_text(level_name) + " (schedule level)"
+                            elif param.StorageType == DB.StorageType.Double or param.StorageType == DB.StorageType.Integer:
+                                # Sometimes schedule level might be stored as text that needs to be converted
+                                level_value = param.AsValueString()
+                                if level_value:
+                                    return clean_text(level_value) + " (schedule level)"
+            except:
+                pass
+            
+            # Method 2: Try built-in schedule level parameter
+            try:
+                schedule_level_param = element.get_Parameter(DB.BuiltInParameter.SCHEDULE_LEVEL_PARAM)
+                if schedule_level_param and schedule_level_param.HasValue:
+                    if schedule_level_param.StorageType == DB.StorageType.ElementId:
+                        element_id = schedule_level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name) + " (schedule level)"
+                    elif schedule_level_param.StorageType == DB.StorageType.String:
+                        level_name = schedule_level_param.AsString()
+                        if level_name:
+                            return clean_text(level_name) + " (schedule level)"
+            except:
+                pass
+            
+            # Method 3: Check shared parameters for schedule level
+            try:
+                for param in element.Parameters:
+                    if param.IsShared:
+                        param_name = param.Definition.Name.lower()
+                        if 'schedule level' in param_name or 'schedul' in param_name and 'level' in param_name:
+                            if param.HasValue:
+                                if param.StorageType == DB.StorageType.ElementId:
+                                    element_id = param.AsElementId()
+                                    if element_id != DB.ElementId.InvalidElementId:
+                                        level_element = doc.GetElement(element_id)
+                                        if level_element and hasattr(level_element, 'Name'):
+                                            return clean_text(level_element.Name) + " (schedule level)"
+                                elif param.StorageType == DB.StorageType.String:
+                                    level_name = param.AsString()
+                                    if level_name:
+                                        return clean_text(level_name) + " (schedule level)"
+            except:
+                pass
+            
+            # Method 4: Standard level parameters for generic models
+            generic_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in generic_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+
+        # Special handling for Planting category - check Host first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_Planting):
+            
+            # Method 1: Try to get level from Host element
+            try:
+                if hasattr(element, 'Host') and element.Host:
+                    host = element.Host
+                    
+                    # Try to get level from host's level parameters
+                    host_level_params = [
+                        DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                        DB.BuiltInParameter.LEVEL_PARAM,
+                        DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM,
+                        DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM
+                    ]
+                    
+                    for param_type in host_level_params:
+                        try:
+                            host_level_param = host.get_Parameter(param_type)
+                            if host_level_param and host_level_param.HasValue:
+                                element_id = host_level_param.AsElementId()
+                                if element_id != DB.ElementId.InvalidElementId:
+                                    level_element = doc.GetElement(element_id)
+                                    if level_element:
+                                        return clean_text(level_element.Name) + " (from host)"
+                        except:
+                            continue
+                    
+                    # Try host's direct Level property
+                    if hasattr(host, 'Level') and host.Level:
+                        return clean_text(host.Level.Name) + " (from host)"
+                    
+                    # Try host's LevelId property
+                    if hasattr(host, 'LevelId') and host.LevelId != DB.ElementId.InvalidElementId:
+                        level = doc.GetElement(host.LevelId)
+                        if level:
+                            return clean_text(level.Name) + " (from host)"
+            except:
+                pass
+            
+            # Method 2: Try standard level parameters for planting
+            planting_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in planting_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # Method 3: Location-based approach for planting
+            try:
+                location = element.Location
+                if hasattr(location, 'Point'):
+                    point = location.Point
+                    # Find the level that this planting element is closest to
+                    all_levels = DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements()
+                    if all_levels:
+                        # Sort levels by elevation
+                        sorted_levels = sorted(all_levels, key=lambda x: x.Elevation)
+                        
+                        # Find the appropriate level based on Z coordinate
+                        element_z = point.Z
+                        for i, level in enumerate(sorted_levels):
+                            # If element is above this level and below next level (or if it's the top level)
+                            if i == len(sorted_levels) - 1 or element_z < sorted_levels[i + 1].Elevation:
+                                if element_z >= level.Elevation - 1.0:  # 1 foot tolerance below level
+                                    return clean_text(level.Name) + " (calculated)"
+            except:
+                pass
+
         # Special handling for structural framing - try multiple approaches
-        if element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_StructuralFraming):
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_StructuralFraming):
             
             # Method 1: Try Reference Level built-in parameters
             reference_level_params = [
@@ -123,7 +289,7 @@ def get_element_level(element):
             except:
                 pass
 
-        # Standard handling for all other elements (and fallback for structural framing)
+        # Standard handling for all other elements (and fallback for special categories)
         common_level_params = [
             DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
             DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM,
@@ -156,7 +322,7 @@ def get_element_level(element):
             if level:
                 return clean_text(level.Name)
 
-        # For hosted elements, try to get level from host
+        # For hosted elements, try to get level from host (general fallback)
         try:
             if hasattr(element, 'Host') and element.Host:
                 host_level_param = element.Host.get_Parameter(DB.BuiltInParameter.FAMILY_LEVEL_PARAM)
@@ -303,7 +469,10 @@ def main():
         message += "Mechanical Equipment, Electrical Equipment, Electrical Fixtures, Lighting Fixtures, "
         message += "Plumbing Fixtures, Fire Protection, Communication Devices, Security Devices, "
         message += "Nurse Call Devices, Planting, Site, Parking, Entourage, Generic Models, Mass, Specialty Equipment\n\n"
-        message += "Note: For Structural Framing elements, multiple methods are used to determine reference levels.\n\n"
+        message += "Special handling:\n"
+        message += "- Structural Framing: Uses reference level when available\n"
+        message += "- Planting: Checks host element level first, then calculates from position\n"
+        message += "- Generic Models: Checks Schedule Level parameter first, then standard level parameters\n\n"
         message += "The CSV file can be opened in Excel or any spreadsheet application."
 
         forms.alert(message)
