@@ -11,6 +11,7 @@ import datetime
 import os
 import re
 import csv
+import codecs
 
 # Get current document
 doc = revit.doc
@@ -548,31 +549,31 @@ def save_to_csv(detailed_elements):
     filepath_detailed = os.path.join(output_folder, filename_detailed)
 
     try:
-        # Save detailed file
-        with open(filepath_detailed, 'w') as csvfile:
+        # Save detailed file with UTF-8 encoding (Python 2.7 compatible)
+        with codecs.open(filepath_detailed, 'w', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
 
-            # Write timestamp header
-            writer.writerow(["Workset Audit Report - Detailed Element Breakdown"])
-            writer.writerow(["Generated on: {}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))])
-            writer.writerow(["Document: {}".format(doc.Title or "Unknown")])
-            writer.writerow([])  # Empty row for spacing
-
             # Write column headers
-            writer.writerow(["Workset Name", "Category", "Family Name", "Type Name", "Element ID"])
+            writer.writerow([u"Workset Name", u"Category", u"Family Name", u"Type Name", u"Element ID"])
 
             # Write detailed data
             for workset_name, elements in detailed_elements.items():
                 if not elements:
-                    writer.writerow([workset_name, "No elements found", "", "", ""])
+                    writer.writerow([workset_name, u"No elements found", u"", u"", u""])
                 else:
                     for element in elements:
+                        # Clean any potential problematic characters as a safety measure
+                        workset_clean = clean_text(workset_name)
+                        category_clean = clean_text(element['category'])
+                        family_clean = clean_text(element['family'])
+                        type_clean = clean_text(element['type'])
+                        
                         writer.writerow([
-                            workset_name,
-                            element['category'],
-                            element['family'],
-                            element['type'],
-                            element['element_id']
+                            workset_clean,
+                            category_clean,
+                            family_clean,
+                            type_clean,
+                            unicode(element['element_id'])
                         ])
 
         print("Detailed CSV report saved to: {}".format(filepath_detailed))
@@ -581,6 +582,40 @@ def save_to_csv(detailed_elements):
     except Exception as e:
         print("Error saving CSV file: {}".format(str(e)))
         return None
+
+def clean_text(text):
+    """Clean text to handle Unicode characters safely for Python 2.7"""
+    if not text:
+        return u""
+    
+    try:
+        # Convert to unicode string if it isn't already
+        if isinstance(text, str):
+            text = text.decode('utf-8', errors='replace')
+        elif not isinstance(text, unicode):
+            text = unicode(text)
+        
+        # Replace common problematic Unicode characters
+        replacements = {
+            u'\u2019': u"'",  # Right single quotation mark
+            u'\u2018': u"'",  # Left single quotation mark  
+            u'\u201c': u'"',  # Left double quotation mark
+            u'\u201d': u'"',  # Right double quotation mark
+            u'\u2013': u'-',  # En dash
+            u'\u2014': u'-',  # Em dash
+            u'\u00a0': u' ',  # Non-breaking space
+            u'\u2022': u'*',  # Bullet point
+        }
+        
+        for unicode_char, replacement in replacements.items():
+            text = text.replace(unicode_char, replacement)
+            
+        return text
+        
+    except Exception:
+        # Ultimate fallback - return a safe string
+        return u"Text_Error"
+    
 
 if __name__ == '__main__':
     # Run the audit and get results

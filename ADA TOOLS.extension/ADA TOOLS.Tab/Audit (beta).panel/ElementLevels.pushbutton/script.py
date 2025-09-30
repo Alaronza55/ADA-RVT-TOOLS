@@ -437,6 +437,7 @@ def main():
     output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
     csv_filename = "Model_Elements_with_Levels.csv"
     file_path = os.path.join(output_folder, csv_filename)
+    # Create directory if it doesn't exist
 
     try:
         # Create CSV file with explicit encoding
