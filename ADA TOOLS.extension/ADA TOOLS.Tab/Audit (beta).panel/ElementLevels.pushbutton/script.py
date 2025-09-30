@@ -27,7 +27,7 @@ def clean_text(text):
         text = text.replace('\u2019', "'")         # Right single quotation mark
         text = text.replace('\u201C', '"')         # Left double quotation mark
         text = text.replace('\u201D', '"')         # Right double quotation mark
-        
+
         # Remove any remaining non-ASCII characters
         text = ''.join(char if ord(char) < 128 else '?' for char in text)
         return text
@@ -35,183 +35,242 @@ def clean_text(text):
         return "Unknown"
 
 def get_element_level(element):
-    """Get the level associated with an element"""
+    """Get the level associated with an element - with special handling for structural framing"""
     try:
-        # Try to get Level parameter
-        level_param = element.get_Parameter(DB.BuiltInParameter.FAMILY_LEVEL_PARAM)
-        if level_param and level_param.AsElementId() != DB.ElementId.InvalidElementId:
-            level = doc.GetElement(level_param.AsElementId())
-            return clean_text(level.Name) if level else "No Level"
+        # Special handling for structural framing - try multiple approaches
+        if element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_StructuralFraming):
+            
+            # Method 1: Try Reference Level built-in parameters
+            reference_level_params = [
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in reference_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # Method 2: Try to get reference level by parameter name
+            try:
+                all_params = element.Parameters
+                for param in all_params:
+                    param_name = param.Definition.Name.lower()
+                    if 'reference level' in param_name or 'ref level' in param_name:
+                        if param.HasValue and param.StorageType == DB.StorageType.ElementId:
+                            element_id = param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element and level_element.GetType().Name == "Level":
+                                    return clean_text(level_element.Name)
+            except:
+                pass
+            
+            # Method 3: For structural framing, try to get start and end levels
+            try:
+                if hasattr(element, 'GetAnalyticalModel'):
+                    analytical_model = element.GetAnalyticalModel()
+                    if analytical_model:
+                        # Try to get the curve and calculate level from Z coordinate
+                        curve = analytical_model.GetCurve()
+                        if curve:
+                            start_point = curve.GetEndPoint(0)
+                            # Find closest level to this Z coordinate
+                            all_levels = DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements()
+                            closest_level = None
+                            min_distance = float('inf')
+                            
+                            for level in all_levels:
+                                distance = abs(level.Elevation - start_point.Z)
+                                if distance < min_distance:
+                                    min_distance = distance
+                                    closest_level = level
+                            
+                            if closest_level:
+                                return clean_text(closest_level.Name)
+            except:
+                pass
+            
+            # Method 4: Try location-based approach for structural framing
+            try:
+                location = element.Location
+                if hasattr(location, 'Curve'):
+                    curve = location.Curve
+                    if curve:
+                        start_point = curve.GetEndPoint(0)
+                        # Find the level that this element is closest to
+                        all_levels = DB.FilteredElementCollector(doc).OfClass(DB.Level).ToElements()
+                        if all_levels:
+                            # Sort levels by elevation
+                            sorted_levels = sorted(all_levels, key=lambda x: x.Elevation)
+                            
+                            # Find the appropriate level based on Z coordinate
+                            element_z = start_point.Z
+                            for i, level in enumerate(sorted_levels):
+                                # If element is above this level and below next level (or if it's the top level)
+                                if i == len(sorted_levels) - 1 or element_z < sorted_levels[i + 1].Elevation:
+                                    if element_z >= level.Elevation - 1.0:  # 1 foot tolerance below level
+                                        return clean_text(level.Name)
+            except:
+                pass
 
-        # Try to get Reference Level parameter
-        ref_level_param = element.get_Parameter(DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM)
-        if ref_level_param and ref_level_param.AsElementId() != DB.ElementId.InvalidElementId:
-            level = doc.GetElement(ref_level_param.AsElementId())
-            return clean_text(level.Name) if level else "No Level"
+        # Standard handling for all other elements (and fallback for structural framing)
+        common_level_params = [
+            DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+            DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM,
+            DB.BuiltInParameter.LEVEL_PARAM,
+            DB.BuiltInParameter.WALL_BASE_CONSTRAINT,
+            DB.BuiltInParameter.STAIRS_BASE_LEVEL_PARAM,
+            DB.BuiltInParameter.ROOF_BASE_LEVEL_PARAM,
+            DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM
+        ]
 
-        # Try to get Base Constraint parameter (for walls, floors, etc.)
-        base_constraint_param = element.get_Parameter(DB.BuiltInParameter.WALL_BASE_CONSTRAINT)
-        if base_constraint_param and base_constraint_param.AsElementId() != DB.ElementId.InvalidElementId:
-            level = doc.GetElement(base_constraint_param.AsElementId())
-            return clean_text(level.Name) if level else "No Level"
+        for param_type in common_level_params:
+            try:
+                level_param = element.get_Parameter(param_type)
+                if level_param and level_param.HasValue:
+                    element_id = level_param.AsElementId()
+                    if element_id != DB.ElementId.InvalidElementId:
+                        level_element = doc.GetElement(element_id)
+                        if level_element:
+                            return clean_text(level_element.Name)
+            except:
+                continue
 
-        # Try to get Level parameter for floors
-        floor_level_param = element.get_Parameter(DB.BuiltInParameter.LEVEL_PARAM)
-        if floor_level_param and floor_level_param.AsElementId() != DB.ElementId.InvalidElementId:
-            level = doc.GetElement(floor_level_param.AsElementId())
-            return clean_text(level.Name) if level else "No Level"
-
-        # Try to get Base Level for stairs
-        base_level_param = element.get_Parameter(DB.BuiltInParameter.STAIRS_BASE_LEVEL_PARAM)
-        if base_level_param and base_level_param.AsElementId() != DB.ElementId.InvalidElementId:
-            level = doc.GetElement(base_level_param.AsElementId())
-            return clean_text(level.Name) if level else "No Level"
-
-        # For elements that might have a Level property directly
+        # Try direct Level property
         if hasattr(element, 'Level') and element.Level:
             return clean_text(element.Level.Name)
 
-        return "No Level"
+        # Try LevelId property
+        if hasattr(element, 'LevelId') and element.LevelId != DB.ElementId.InvalidElementId:
+            level = doc.GetElement(element.LevelId)
+            if level:
+                return clean_text(level.Name)
 
-    except:
-        return "No Level"
-
-def get_element_category_name(element):
-    """Get the category name of an element"""
-    try:
-        if element.Category:
-            return clean_text(element.Category.Name)
-        else:
-            return "No Category"
-    except:
-        return "No Category"
-
-def get_element_name(element):
-    """Get the name of an element"""
-    try:
-        # Try to get the Name parameter
-        if hasattr(element, 'Name') and element.Name:
-            return clean_text(element.Name)
-
-        # Try to get Type name
-        element_type = doc.GetElement(element.GetTypeId())
-        if element_type and hasattr(element_type, 'Name') and element_type.Name:
-            return clean_text(element_type.Name)
-
-        # Fallback to category name
-        return get_element_category_name(element)
-
-    except:
-        return "Unknown Element"
-
-def is_model_element(element):
-    """Check if element is a model element that should be included"""
-    try:
-        # Exclude views, sheets, and other non-model elements
-        if isinstance(element, (DB.View, DB.ViewSheet, DB.ProjectInfo, 
-                              DB.PrintSetting, DB.ViewSheetSet, DB.Family,
-                              DB.ElementType, DB.Material, DB.Level)):
-            return False
-
-        # Check if element has a category
-        if not element.Category:
-            return False
-
-        # Exclude specific categories by name (more reliable than built-in category enum)
-        category_name = element.Category.Name
-        excluded_categories = [
-            "Views", "Sheets", "Project Information", "Schedules", 
-            "Legends", "Materials", "Levels", "Grids", "Scope Boxes"
-        ]
-
-        if category_name in excluded_categories:
-            return False
-
-        # Include elements that have geometry or location
-        if element.Location is not None:
-            return True
-
-        # Check if element has geometry
+        # For hosted elements, try to get level from host
         try:
-            geom = element.get_Geometry(DB.Options())
-            if geom is not None:
-                return True
+            if hasattr(element, 'Host') and element.Host:
+                host_level_param = element.Host.get_Parameter(DB.BuiltInParameter.FAMILY_LEVEL_PARAM)
+                if host_level_param and host_level_param.HasValue:
+                    element_id = host_level_param.AsElementId()
+                    if element_id != DB.ElementId.InvalidElementId:
+                        level_element = doc.GetElement(element_id)
+                        if level_element:
+                            return clean_text(level_element.Name) + " (from host)"
         except:
             pass
 
-        return False
+        return "No Level"
 
-    except:
-        return False
-
-def create_directory_if_not_exists(directory):
-    """Create directory if it doesn't exist"""
-    try:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            print("Created directory: {}".format(directory))
-        return True
     except Exception as e:
-        print("Error creating directory: {}".format(str(e)))
-        return False
+        return "Error: {}".format(str(e))
 
 def main():
-    # Collect all elements (excluding element types)
-    collector = DB.FilteredElementCollector(doc)
-    elements = collector.WhereElementIsNotElementType().ToElements()
+    """Main function to export elements with levels"""
 
-    # Filter model elements
-    model_elements = []
+    # Define categories to collect
+    categories = [
+        DB.BuiltInCategory.OST_Walls,
+        DB.BuiltInCategory.OST_Doors,
+        DB.BuiltInCategory.OST_Windows,
+        DB.BuiltInCategory.OST_Floors,
+        DB.BuiltInCategory.OST_Ceilings,
+        DB.BuiltInCategory.OST_Roofs,
+        DB.BuiltInCategory.OST_Stairs,
+        DB.BuiltInCategory.OST_StairsRailing,
+        DB.BuiltInCategory.OST_Ramps,
+        DB.BuiltInCategory.OST_CurtainWallMullions,
+        DB.BuiltInCategory.OST_CurtainWallPanels,
+        DB.BuiltInCategory.OST_Columns,
+        DB.BuiltInCategory.OST_Furniture,
+        DB.BuiltInCategory.OST_FurnitureSystems,
+        DB.BuiltInCategory.OST_Casework,
+        DB.BuiltInCategory.OST_StructuralColumns,
+        DB.BuiltInCategory.OST_StructuralFraming,
+        DB.BuiltInCategory.OST_StructuralFoundation,
+        DB.BuiltInCategory.OST_Rebar,
+        DB.BuiltInCategory.OST_MechanicalEquipment,
+        DB.BuiltInCategory.OST_ElectricalEquipment,
+        DB.BuiltInCategory.OST_ElectricalFixtures,
+        DB.BuiltInCategory.OST_LightingFixtures,
+        DB.BuiltInCategory.OST_PlumbingFixtures,
+        DB.BuiltInCategory.OST_Sprinklers,
+        DB.BuiltInCategory.OST_CommunicationDevices,
+        DB.BuiltInCategory.OST_SecurityDevices,
+        DB.BuiltInCategory.OST_NurseCallDevices,
+        DB.BuiltInCategory.OST_Planting,
+        DB.BuiltInCategory.OST_Site,
+        DB.BuiltInCategory.OST_Parking,
+        DB.BuiltInCategory.OST_Entourage,
+        DB.BuiltInCategory.OST_GenericModel,
+        DB.BuiltInCategory.OST_Mass,
+        DB.BuiltInCategory.OST_SpecialityEquipment
+    ]
 
-    print("Processing {} total elements...".format(len(elements)))
-
-    for element in elements:
-        if is_model_element(element):
-            model_elements.append(element)
-
-    print("Found {} model elements".format(len(model_elements)))
-
-    if not model_elements:
-        forms.alert("No model elements found in the project.")
-        return
-
-    # Prepare data
-    data = []
-    for i, element in enumerate(model_elements):
+    # Collect elements from all categories
+    all_elements = []
+    for category in categories:
         try:
-            element_name = get_element_name(element)
-            element_id = element.Id.IntegerValue
-            level_name = get_element_level(element)
-            category_name = get_element_category_name(element)
+            category_elements = DB.FilteredElementCollector(doc)\
+                                 .OfCategory(category)\
+                                 .WhereElementIsNotElementType()\
+                                 .ToElements()
+            all_elements.extend(category_elements)
+        except:
+            # Some categories might not exist in all documents
+            continue
 
-            data.append([element_name, element_id, level_name, category_name])
+    # Prepare data for export
+    data = []
+    for element in all_elements:
+        try:
+            # Get element name
+            element_name = "Unnamed"
+            try:
+                name_param = element.get_Parameter(DB.BuiltInParameter.ELEM_FAMILY_AND_TYPE_PARAM)
+                if name_param and name_param.HasValue:
+                    element_name = name_param.AsValueString()
+            except:
+                pass
 
-            # Progress indicator
-            if (i + 1) % 100 == 0:
-                print("Processed {} of {} elements".format(i + 1, len(model_elements)))
+            # Get element ID
+            element_id = str(element.Id.IntegerValue)
 
-        except Exception as e:
-            print("Error processing element {}: {}".format(element.Id, str(e)))
+            # Get element level
+            element_level = get_element_level(element)
+
+            # Get category name
+            category_name = "Unknown Category"
+            try:
+                if element.Category:
+                    category_name = element.Category.Name
+            except:
+                pass
+
+            # Add to data
+            data.append([element_name, element_id, element_level, category_name])
+
+        except:
+            # Skip problematic elements
             continue
 
     if not data:
-        forms.alert("No valid model elements found.")
+        forms.alert("No elements found to export.")
         return
 
-    # Sort data by category, then by element name
-    data.sort(key=lambda x: (x[3], x[0]))
-
-    # Create file path
-    clean_folder_name = clean_text(folder_name)
-    output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(clean_folder_name)
+    # Create filename
+    output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
     csv_filename = "Model_Elements_with_Levels.csv"
     file_path = os.path.join(output_folder, csv_filename)
-
-    # Create directory if it doesn't exist
-    if not create_directory_if_not_exists(output_folder):
-        forms.alert("Could not create output directory. Using desktop instead.")
-        desktop = os.path.join(os.environ['USERPROFILE'], 'Desktop')
-        file_path = os.path.join(desktop, csv_filename)
 
     try:
         # Create CSV file with explicit encoding
@@ -238,15 +297,16 @@ def main():
         message = "Export completed successfully!\n\n"
         message += "File saved to: {}\n".format(file_path)
         message += "Total elements exported: {}\n\n".format(len(data))
+        message += "Categories included: Walls, Doors, Windows, Floors, Ceilings, Roofs, Stairs, Railings, Ramps, "
+        message += "Curtain Wall Mullions, Curtain Panels, Columns, Furniture, Furniture Systems, Casework, "
+        message += "Structural Columns, Structural Framing, Structural Foundations, Structural Rebar, "
+        message += "Mechanical Equipment, Electrical Equipment, Electrical Fixtures, Lighting Fixtures, "
+        message += "Plumbing Fixtures, Fire Protection, Communication Devices, Security Devices, "
+        message += "Nurse Call Devices, Planting, Site, Parking, Entourage, Generic Models, Mass, Specialty Equipment\n\n"
+        message += "Note: For Structural Framing elements, multiple methods are used to determine reference levels.\n\n"
         message += "The CSV file can be opened in Excel or any spreadsheet application."
 
         forms.alert(message)
-
-        # Try to open the file
-        try:
-            os.startfile(file_path)
-        except:
-            print("Could not automatically open the file. Please navigate to: {}".format(file_path))
 
     except Exception as e:
         forms.alert("Error creating CSV file: {}".format(str(e)))
