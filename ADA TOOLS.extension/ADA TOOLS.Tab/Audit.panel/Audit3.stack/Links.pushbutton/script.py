@@ -77,62 +77,174 @@ def get_revit_link_filename(link):
     try:
         # Get the link type
         link_type = doc.GetElement(link.GetTypeId())
+        
+        if not link_type:
+            return "Unknown_Type_{}.rvt".format(link.Id.IntegerValue)
 
-        # Method 1: Check if we can get the linked document name directly
+        # First, let's try to get the type name and see what we're working with
+        type_name = ""
+        try:
+            type_name = link_type.Name
+        except:
+            type_name = ""
+
+        # Method 1: Try to get from loaded document first (most reliable when available)
         try:
             linked_doc = link.GetLinkDocument()
-            if linked_doc:
-                return os.path.basename(linked_doc.PathName) if linked_doc.PathName else linked_doc.Title + ".rvt"
+            if linked_doc and linked_doc.Title:
+                title = linked_doc.Title.strip()
+                if title and not title.startswith("Error"):
+                    if not title.lower().endswith('.rvt'):
+                        title += '.rvt'
+                    return title
         except:
             pass
 
-        # Method 2: Try to get filename from type name (most reliable for loaded links)
-        type_name = link_type.Name
+        # Method 2: Parse the type name more aggressively
         if type_name:
-            # Often the type name IS the filename or contains it
-            if type_name.endswith('.rvt'):
-                return type_name
-            elif '.rvt' in type_name:
-                # Extract just the .rvt part
-                parts = type_name.split('.rvt')
-                return parts[0] + '.rvt'
-            else:
-                # If no .rvt extension, add it (assuming it's a Revit file)
-                return type_name + '.rvt'
+            # Remove common prefixes and extract meaningful content
+            parsed_name = parse_revit_link_type_name(type_name)
+            if parsed_name:
+                return parsed_name
 
         # Method 3: Try external file reference
         try:
-            if hasattr(link_type, 'GetExternalFileReference'):
-                exfs = link_type.GetExternalFileReference()
-                if exfs:
-                    try:
-                        path = exfs.GetAbsolutePath()
-                        if path:
-                            return os.path.basename(path)
-                    except:
-                        pass
+            exfs = link_type.GetExternalFileReference()
+            if exfs:
+                # Get the linked file status to understand what we're dealing with
+                status = exfs.GetLinkedFileStatus()
+                
+                # Try to get path information
+                try:
+                    model_path = exfs.GetPath()
+                    if model_path:
+                        # Try to convert to user visible path
+                        user_path = DB.ModelPathUtils.ConvertModelPathToUserVisiblePath(model_path)
+                        if user_path:
+                            filename = os.path.basename(str(user_path))
+                            if filename and len(filename) > 4:  # Must be more than just ".rvt"
+                                return filename
+                except:
+                    pass
 
-                    try:
-                        path = exfs.GetPath()
-                        if path:
-                            path_str = str(path)
-                            if path_str and path_str != "":
-                                return os.path.basename(path_str)
-                    except:
-                        pass
+                # Try absolute path
+                try:
+                    abs_path = exfs.GetAbsolutePath()
+                    if abs_path:
+                        filename = os.path.basename(str(abs_path))
+                        if filename and len(filename) > 4:
+                            return filename
+                except:
+                    pass
         except:
             pass
 
-        # Method 4: Last resort - use element name
-        element_name = link.Name
-        if element_name and element_name != type_name:
-            if '.rvt' in element_name:
-                return os.path.basename(element_name)
+        # Fallback: create a meaningful name from whatever we have
+        if type_name and type_name.strip():
+            clean_name = type_name.strip()
+            # Remove any "Revit Link" prefixes
+            prefixes_to_remove = ["Revit Link ", "Link ", "RVT ", "Type "]
+            for prefix in prefixes_to_remove:
+                if clean_name.startswith(prefix):
+                    clean_name = clean_name[len(prefix):].strip()
+            
+            if clean_name and len(clean_name) > 0:
+                if not clean_name.lower().endswith('.rvt'):
+                    clean_name += '.rvt'
+                return clean_name
 
-        return "Unknown (ID: {})".format(link.Id.IntegerValue)
+        # Last resort
+        return "UnknownLink_{}.rvt".format(link.Id.IntegerValue)
 
     except Exception as e:
-        return "Error (ID: {})".format(link.Id.IntegerValue)
+        return "ErrorLink_{}.rvt".format(link.Id.IntegerValue)
+
+
+def parse_revit_link_type_name(type_name):
+    """Parse Revit link type name to extract filename"""
+    if not type_name:
+        return None
+    
+    original_name = type_name.strip()
+    
+    # If the type name already contains .rvt, extract it properly
+    if '.rvt' in original_name.lower():
+        # Find the .rvt part and extract filename
+        lower_name = original_name.lower()
+        rvt_index = lower_name.find('.rvt')
+        
+        # Look backwards from .rvt to find the start of filename
+        start_index = 0
+        for i in range(rvt_index - 1, -1, -1):
+            char = original_name[i]
+            if char in ['\\', '/', ':', ' ']:
+                start_index = i + 1
+                break
+        
+        filename = original_name[start_index:rvt_index + 4]
+        if len(filename) > 4:  # More than just ".rvt"
+            return filename.strip()
+    
+    # Try to clean up the name and make it a valid filename
+    clean_name = original_name
+    
+    # Remove common Revit prefixes
+    prefixes = [
+        "Revit Link - ",
+        "Revit Link: ",
+        "Link - ",
+        "Link: ",
+        "Type: ",
+        "RVT - ",
+        "RVT: "
+    ]
+    
+    for prefix in prefixes:
+        if clean_name.startswith(prefix):
+            clean_name = clean_name[len(prefix):].strip()
+            break
+    
+    # Remove file paths if present
+    clean_name = clean_name.replace('\\', '/').split('/')[-1]
+    
+    # If we have a reasonable name, use it
+    if clean_name and len(clean_name.strip()) > 0:
+        clean_name = clean_name.strip()
+        
+        # Remove any remaining invalid characters for display
+        invalid_chars = ['<', '>', '|', '"', '*', '?']
+        for char in invalid_chars:
+            clean_name = clean_name.replace(char, '_')
+        
+        # Add .rvt if not present
+        if not clean_name.lower().endswith('.rvt'):
+            clean_name += '.rvt'
+        
+        return clean_name
+    
+    return None
+
+
+def clean_revit_type_name(type_name):
+    """Clean up Revit link type name to get a proper filename"""
+    if not type_name:
+        return "Unknown.rvt"
+    
+    # Remove common prefixes
+    prefixes = ["Revit Link ", "Link ", "Type ", "RVT "]
+    clean_name = type_name
+    for prefix in prefixes:
+        if clean_name.startswith(prefix):
+            clean_name = clean_name[len(prefix):]
+    
+    # If it contains path separators, get just the filename
+    clean_name = os.path.basename(clean_name)
+    
+    # Ensure it ends with .rvt
+    if not clean_name.lower().endswith('.rvt'):
+        clean_name += '.rvt'
+    
+    return clean_name
 
 def check_model():
     output = script.get_output()
