@@ -73,22 +73,14 @@ def get_views_containing_cad(cad):
     return views_list
 
 def get_revit_link_filename(link):
-    """Get the actual file name of the Revit link"""
+    """Get the actual file name of the Revit link with improved fallback methods"""
     try:
-        # Get the link type
         link_type = doc.GetElement(link.GetTypeId())
         
         if not link_type:
             return "Unknown_Type_{}.rvt".format(link.Id.IntegerValue)
 
-        # First, let's try to get the type name and see what we're working with
-        type_name = ""
-        try:
-            type_name = link_type.Name
-        except:
-            type_name = ""
-
-        # Method 1: Try to get from loaded document first (most reliable when available)
+        # Method 1: Try to get from loaded document (most reliable)
         try:
             linked_doc = link.GetLinkDocument()
             if linked_doc and linked_doc.Title:
@@ -100,34 +92,23 @@ def get_revit_link_filename(link):
         except:
             pass
 
-        # Method 2: Parse the type name more aggressively
-        if type_name:
-            # Remove common prefixes and extract meaningful content
-            parsed_name = parse_revit_link_type_name(type_name)
-            if parsed_name:
-                return parsed_name
-
-        # Method 3: Try external file reference
+        # Method 2: Try ExternalFileReference paths
         try:
             exfs = link_type.GetExternalFileReference()
             if exfs:
-                # Get the linked file status to understand what we're dealing with
-                status = exfs.GetLinkedFileStatus()
-                
-                # Try to get path information
+                # Try GetPath with ModelPathUtils
                 try:
                     model_path = exfs.GetPath()
                     if model_path:
-                        # Try to convert to user visible path
                         user_path = DB.ModelPathUtils.ConvertModelPathToUserVisiblePath(model_path)
                         if user_path:
                             filename = os.path.basename(str(user_path))
-                            if filename and len(filename) > 4:  # Must be more than just ".rvt"
+                            if filename and len(filename) > 4 and not filename.startswith("Error"):
                                 return filename
                 except:
                     pass
-
-                # Try absolute path
+                
+                # Try GetAbsolutePath
                 try:
                     abs_path = exfs.GetAbsolutePath()
                     if abs_path:
@@ -139,55 +120,93 @@ def get_revit_link_filename(link):
         except:
             pass
 
-        # Fallback: create a meaningful name from whatever we have
-        if type_name and type_name.strip():
-            clean_name = type_name.strip()
-            # Remove any "Revit Link" prefixes
-            prefixes_to_remove = ["Revit Link ", "Link ", "RVT ", "Type "]
-            for prefix in prefixes_to_remove:
-                if clean_name.startswith(prefix):
-                    clean_name = clean_name[len(prefix):].strip()
-            
-            if clean_name and len(clean_name) > 0:
-                if not clean_name.lower().endswith('.rvt'):
-                    clean_name += '.rvt'
-                return clean_name
+        # Method 3: Parse the type name intelligently
+        try:
+            type_name = link_type.Name
+            if type_name:
+                parsed_name = parse_revit_link_type_name(type_name)
+                if parsed_name and len(parsed_name) > 4:
+                    return parsed_name
+        except:
+            pass
 
-        # Last resort
+        # Method 4: Try using Parameter to get the link name
+        try:
+            param = link_type.get_Parameter(DB.BuiltInParameter.SYMBOL_NAME_PARAM)
+            if param and param.HasValue:
+                param_value = param.AsString()
+                if param_value and len(param_value) > 0:
+                    clean_name = clean_revit_type_name(param_value)
+                    if clean_name and len(clean_name) > 4:
+                        return clean_name
+        except:
+            pass
+
+        # Method 5: Check if there's a saved path parameter
+        try:
+            saved_path_param = link_type.get_Parameter(DB.BuiltInParameter.RVT_LINK_INSTANCE_PATH)
+            if saved_path_param and saved_path_param.HasValue:
+                saved_path = saved_path_param.AsString()
+                if saved_path:
+                    filename = os.path.basename(saved_path)
+                    if filename and len(filename) > 4:
+                        return filename
+        except:
+            pass
+
+        # Method 6: Try Family Name parameter
+        try:
+            family_name_param = link_type.get_Parameter(DB.BuiltInParameter.ALL_MODEL_FAMILY_NAME)
+            if family_name_param and family_name_param.HasValue:
+                family_name = family_name_param.AsString()
+                if family_name and len(family_name) > 0:
+                    clean_name = clean_revit_type_name(family_name)
+                    if clean_name and len(clean_name) > 4:
+                        return clean_name
+        except:
+            pass
+
+        # Last resort: Use type name as-is if available
+        try:
+            if link_type.Name and len(link_type.Name) > 0:
+                clean_name = clean_revit_type_name(link_type.Name)
+                if clean_name and len(clean_name) > 4:
+                    return clean_name
+        except:
+            pass
+
         return "UnknownLink_{}.rvt".format(link.Id.IntegerValue)
 
     except Exception as e:
         return "ErrorLink_{}.rvt".format(link.Id.IntegerValue)
 
-
 def parse_revit_link_type_name(type_name):
     """Parse Revit link type name to extract filename"""
     if not type_name:
         return None
-    
+
     original_name = type_name.strip()
-    
+
     # If the type name already contains .rvt, extract it properly
     if '.rvt' in original_name.lower():
-        # Find the .rvt part and extract filename
         lower_name = original_name.lower()
         rvt_index = lower_name.find('.rvt')
-        
+
         # Look backwards from .rvt to find the start of filename
         start_index = 0
         for i in range(rvt_index - 1, -1, -1):
             char = original_name[i]
-            if char in ['\\', '/', ':', ' ']:
+            if char in ['\\', '/', ':', ' ', '\t']:
                 start_index = i + 1
                 break
-        
+
         filename = original_name[start_index:rvt_index + 4]
         if len(filename) > 4:  # More than just ".rvt"
             return filename.strip()
-    
+
     # Try to clean up the name and make it a valid filename
     clean_name = original_name
-    
+
     # Remove common Revit prefixes
     prefixes = [
         "Revit Link - ",
@@ -196,56 +215,100 @@ def parse_revit_link_type_name(type_name):
         "Link: ",
         "Type: ",
         "RVT - ",
-        "RVT: "
+        "RVT: ",
+        "RevitLinkType ",
+        "Type ",
     ]
-    
+
     for prefix in prefixes:
         if clean_name.startswith(prefix):
             clean_name = clean_name[len(prefix):].strip()
             break
-    
+
     # Remove file paths if present
     clean_name = clean_name.replace('\\', '/').split('/')[-1]
-    
+
     # If we have a reasonable name, use it
     if clean_name and len(clean_name.strip()) > 0:
         clean_name = clean_name.strip()
-        
+
         # Remove any remaining invalid characters for display
         invalid_chars = ['<', '>', '|', '"', '*', '?']
         for char in invalid_chars:
             clean_name = clean_name.replace(char, '_')
-        
+
         # Add .rvt if not present
         if not clean_name.lower().endswith('.rvt'):
             clean_name += '.rvt'
-        
-        return clean_name
-    
-    return None
 
+        return clean_name
+
+    return None
 
 def clean_revit_type_name(type_name):
     """Clean up Revit link type name to get a proper filename"""
     if not type_name:
         return "Unknown.rvt"
-    
+
     # Remove common prefixes
-    prefixes = ["Revit Link ", "Link ", "Type ", "RVT "]
-    clean_name = type_name
+    prefixes = ["Revit Link ", "Link ", "Type ", "RVT ", "RevitLinkType "]
+    clean_name = type_name.strip()
+    
     for prefix in prefixes:
         if clean_name.startswith(prefix):
-            clean_name = clean_name[len(prefix):]
-    
-    # If it contains path separators, get just the filename
-    clean_name = os.path.basename(clean_name)
-    
-    # Ensure it ends with .rvt
-    if not clean_name.lower().endswith('.rvt'):
-        clean_name += '.rvt'
-    
-    return clean_name
+            clean_name = clean_name[len(prefix):].strip()
 
+    # If it contains path separators, get just the filename
+    clean_name = clean_name.replace('\\', '/').split('/')[-1]
+
+    # Remove trailing/leading whitespace
+    clean_name = clean_name.strip()
+
+    # Ensure it ends with .rvt
+    if clean_name and not clean_name.lower().endswith('.rvt'):
+        clean_name += '.rvt'
+
+    return clean_name if clean_name else "Unknown.rvt"
+
+def get_revit_link_status(link):
+    """Get the load status of a Revit link"""
+    try:
+        link_type = doc.GetElement(link.GetTypeId())
+        if not link_type:
+            return "Unknown"
+        
+        try:
+            exfs = link_type.GetExternalFileReference()
+            if exfs:
+                status = exfs.GetLinkedFileStatus()
+                status_str = status.ToString()
+                
+                # Clean up the status string for better readability
+                if status_str == "Loaded":
+                    return "Loaded"
+                elif status_str == "NotFound":
+                    return "Not Found"
+                elif status_str == "Unloaded":
+                    return "Unloaded"
+                elif status_str == "Invalid":
+                    return "Invalid"
+                else:
+                    return status_str
+            else:
+                # No external file reference - might be an in-place link
+                return "No Reference"
+        except:
+            # If we can't get external file reference, check if doc is loaded
+            try:
+                linked_doc = link.GetLinkDocument()
+                if linked_doc:
+                    return "Loaded"
+                else:
+                    return "Not Loaded"
+            except:
+                return "Unknown"
+    except Exception as e:
+        return "Unknown"
 def check_model():
     output = script.get_output()
     output.close_others()
@@ -340,11 +403,11 @@ def check_model():
     # Prepare data for Revit links table and CSV
     link_table_data = []
     link_csv_data = []
-    link_row_head = ["Revit Link File Name", "Link Instance ID", "Instance Workset", "Link Type Workset", "Link Type ID"]
+    link_row_head = ["Revit Link File Name", "Link Instance ID", "Load Status", "Instance Workset", "Link Type Workset", "Link Type ID"]
     link_csv_data.append(link_row_head)
 
     if not revit_links:
-        no_link_row = ["No Revit links found", "-", "-", "-", "-"]
+        no_link_row = ["No Revit links found", "-", "-", "-", "-", "-"]
         link_table_data.append(no_link_row)
         link_csv_data.append(no_link_row)
     else:
@@ -353,18 +416,21 @@ def check_model():
             # Get the actual file name
             link_filename = get_revit_link_filename(link)
             
+            # Get load status
+            load_status = get_revit_link_status(link)
+
             # Get link instance ID
             link_instance_id = str(link.Id.IntegerValue)
-            
+
             # Get link type ID
             link_type_id = str(link.GetTypeId().IntegerValue)
-            
+
             # Get workset of the instance
             try:
                 instance_workset_name = revit.query.get_element_workset(link).Name
             except:
                 instance_workset_name = "Unknown"
-            
+
             # Get workset of the link type
             try:
                 link_type = doc.GetElement(link.GetTypeId())
@@ -372,7 +438,7 @@ def check_model():
             except:
                 type_workset_name = "Unknown"
 
-            row_data = [link_filename, link_instance_id, instance_workset_name, type_workset_name, link_type_id]
+            row_data = [link_filename, link_instance_id, load_status, instance_workset_name, type_workset_name, link_type_id]
             link_table_data.append(row_data)
             link_csv_data.append(row_data)
 
@@ -387,7 +453,7 @@ def check_model():
     output.print_table(table_data=link_table_data,
                       title="",
                       columns=link_row_head,
-                      formats=['', '', '', '', ''])
+                      formats=['', '', '', '', '', ''])
 
     # Export to CSV files
     output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
@@ -429,7 +495,14 @@ def check_model():
             else:
                 print("No CAD duplicates found.")
 
-        print("CAD CSV exported to: {}".format(cad_csv_filepath))
+        # Print unknown links warning
+        unknown_links = [row[0] for row in link_table_data if row[0].startswith("UnknownLink_")]
+        if unknown_links:
+            print("\nWARNING: {} links could not be identified (showing as UnknownLink_xxx)".format(len(unknown_links)))
+            print("These links may be unloaded, not found, or have corrupted data.")
+            print("Consider reloading these links or checking their status in the model.")
+
+        print("\nCAD CSV exported to: {}".format(cad_csv_filepath))
         print("Revit Links CSV exported to: {}".format(link_csv_filepath))
 
     except Exception as e:

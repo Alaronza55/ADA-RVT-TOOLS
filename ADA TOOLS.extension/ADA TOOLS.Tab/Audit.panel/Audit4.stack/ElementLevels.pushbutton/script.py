@@ -133,7 +133,7 @@ def get_schedule_level_from_element(element, element_description=""):
     return None
 
 def get_element_level(element):
-    """Get the level associated with an element - with special handling for structural framing, planting, generic models, plumbing fixtures, mechanical equipment, lighting fixtures, and nested elements"""
+    """Get the level associated with an element - with special handling for structural framing, planting, generic models, plumbing fixtures, mechanical equipment, lighting fixtures, security devices, electrical fixtures, communication devices, furniture, and nested elements"""
     try:
         # First check if this is a nested element and handle accordingly
         parent_element = get_parent_element(element)
@@ -330,10 +330,213 @@ def get_element_level(element):
                     except:
                         continue
 
-        # Special handling for Planting category - check Host first
+        # Special handling for Security Devices - check Schedule Level first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_SecurityDevices):
+            
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Standard level parameters for security devices
+            security_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in security_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in security_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+
+        # Special handling for Electrical Fixtures - check Schedule Level first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_ElectricalFixtures):
+            
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Standard level parameters for electrical fixtures
+            electrical_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in electrical_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in electrical_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+
+        # Special handling for Communication Devices - check Schedule Level first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_CommunicationDevices):
+            
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Standard level parameters for communication devices
+            communication_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in communication_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in communication_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+
+        # Special handling for Furniture - check Schedule Level first
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_Furniture):
+            
+            # Check schedule level on the element itself
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Standard level parameters for furniture
+            furniture_level_params = [
+                DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
+                DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
+                DB.BuiltInParameter.LEVEL_PARAM,
+                DB.BuiltInParameter.FAMILY_BASE_LEVEL_PARAM
+            ]
+            
+            for param_type in furniture_level_params:
+                try:
+                    level_param = element.get_Parameter(param_type)
+                    if level_param and level_param.HasValue:
+                        element_id = level_param.AsElementId()
+                        if element_id != DB.ElementId.InvalidElementId:
+                            level_element = doc.GetElement(element_id)
+                            if level_element:
+                                return clean_text(level_element.Name)
+                except:
+                    continue
+            
+            # If nested and no level found on element, try parent's standard levels
+            if parent_element:
+                for param_type in furniture_level_params:
+                    try:
+                        level_param = parent_element.get_Parameter(param_type)
+                        if level_param and level_param.HasValue:
+                            element_id = level_param.AsElementId()
+                            if element_id != DB.ElementId.InvalidElementId:
+                                level_element = doc.GetElement(element_id)
+                                if level_element:
+                                    return clean_text(level_element.Name) + " (from parent)"
+                    except:
+                        continue
+
+        # Special handling for Planting category - check Schedule Level first, then Host
         elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_Planting):
             
-            # Method 1: Try to get level from Host element
+            # Check schedule level on the element itself FIRST
+            schedule_level = get_schedule_level_from_element(element)
+            if schedule_level:
+                return schedule_level
+            
+            # If nested, check parent element for schedule level
+            if parent_element:
+                parent_schedule_level = get_schedule_level_from_element(parent_element, " from parent")
+                if parent_schedule_level:
+                    return parent_schedule_level
+            
+            # Method 2: Try to get level from Host element 
             try:
                 if hasattr(element, 'Host') and element.Host:
                     host = element.Host
@@ -370,16 +573,7 @@ def get_element_level(element):
             except:
                 pass
             
-            # If nested, try parent element
-            if parent_element:
-                try:
-                    parent_level = get_element_level(parent_element)
-                    if parent_level and parent_level != "No Level":
-                        return parent_level + " (from parent)"
-                except:
-                    pass
-            
-            # Method 2: Try standard level parameters for planting
+            # Method 3: Try standard level parameters for planting
             planting_level_params = [
                 DB.BuiltInParameter.FAMILY_LEVEL_PARAM,
                 DB.BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM,
@@ -399,7 +593,7 @@ def get_element_level(element):
                 except:
                     continue
             
-            # Method 3: Location-based approach for planting
+            # Method 4: Location-based approach for planting
             try:
                 location = element.Location
                 if hasattr(location, 'Point'):
@@ -575,7 +769,7 @@ def main():
         DB.BuiltInCategory.OST_ElectricalEquipment,
         DB.BuiltInCategory.OST_ElectricalFixtures,
         DB.BuiltInCategory.OST_LightingFixtures,
-        DB.BuiltInCategory.OST_PlumbingFixtures,  # Fixed this line
+        DB.BuiltInCategory.OST_PlumbingFixtures,
         DB.BuiltInCategory.OST_Sprinklers,
         DB.BuiltInCategory.OST_CommunicationDevices,
         DB.BuiltInCategory.OST_SecurityDevices,
@@ -644,8 +838,12 @@ def main():
     output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
     csv_filename = "Model_Elements_with_Levels.csv"
     file_path = os.path.join(output_folder, csv_filename)
-
+                
     try:
+        # Create directory if it doesn't exist
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+            
         # Create CSV file with explicit encoding
         with open(file_path, 'w') as f:
             # Write headers
@@ -678,11 +876,15 @@ def main():
         message += "Nurse Call Devices, Planting, Site, Parking, Entourage, Generic Models, Mass, Specialty Equipment\n\n"
         message += "Special handling:\n"
         message += "- Structural Framing: Uses reference level when available\n"
-        message += "- Planting: Checks host element level first, then calculates from position\n"
+        message += "- Planting: Checks Schedule Level parameter first, then host element level, then calculates from position\n"
         message += "- Generic Models: Checks Schedule Level parameter first, then standard level parameters\n"
         message += "- Plumbing Fixtures: Checks Schedule Level parameter first, then standard level parameters\n"
         message += "- Mechanical Equipment: Checks Schedule Level parameter first, then standard level parameters\n"
         message += "- Lighting Fixtures: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Security Devices: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Electrical Fixtures: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Communication Devices: Checks Schedule Level parameter first, then standard level parameters\n"
+        message += "- Furniture: Checks Schedule Level parameter first, then standard level parameters\n"
         message += "- Nested Elements: Checks parent element properties when child element has no level\n\n"
         message += "The CSV file can be opened in Excel or any spreadsheet application."
 
