@@ -549,8 +549,8 @@ def save_to_csv(detailed_elements):
     filepath_detailed = os.path.join(output_folder, filename_detailed)
 
     try:
-        # Save detailed file with UTF-8 encoding (Python 2.7 compatible)
-        with codecs.open(filepath_detailed, 'w', encoding='utf-8') as csvfile:
+        # Save detailed file with UTF-8 BOM encoding for Excel compatibility
+        with codecs.open(filepath_detailed, 'w', encoding='utf-8-sig') as csvfile:
             writer = csv.writer(csvfile)
 
             # Write column headers
@@ -562,12 +562,12 @@ def save_to_csv(detailed_elements):
                     writer.writerow([workset_name, u"No elements found", u"", u"", u""])
                 else:
                     for element in elements:
-                        # Clean any potential problematic characters as a safety measure
-                        workset_clean = clean_text(workset_name)
-                        category_clean = clean_text(element['category'])
-                        family_clean = clean_text(element['family'])
-                        type_clean = clean_text(element['type'])
-                        
+                        # Just ensure everything is unicode, don't modify the text
+                        workset_clean = workset_name if isinstance(workset_name, unicode) else unicode(workset_name)
+                        category_clean = element['category'] if isinstance(element['category'], unicode) else unicode(element['category'])
+                        family_clean = element['family'] if isinstance(element['family'], unicode) else unicode(element['family'])
+                        type_clean = element['type'] if isinstance(element['type'], unicode) else unicode(element['type'])
+
                         writer.writerow([
                             workset_clean,
                             category_clean,
@@ -587,35 +587,21 @@ def clean_text(text):
     """Clean text to handle Unicode characters safely for Python 2.7"""
     if not text:
         return u""
-    
+
     try:
         # Convert to unicode string if it isn't already
         if isinstance(text, str):
             text = text.decode('utf-8', errors='replace')
         elif not isinstance(text, unicode):
             text = unicode(text)
-        
-        # Replace common problematic Unicode characters
-        replacements = {
-            u'\u2019': u"'",  # Right single quotation mark
-            u'\u2018': u"'",  # Left single quotation mark  
-            u'\u201c': u'"',  # Left double quotation mark
-            u'\u201d': u'"',  # Right double quotation mark
-            u'\u2013': u'-',  # En dash
-            u'\u2014': u'-',  # Em dash
-            u'\u00a0': u' ',  # Non-breaking space
-            u'\u2022': u'*',  # Bullet point
-        }
-        
-        for unicode_char, replacement in replacements.items():
-            text = text.replace(unicode_char, replacement)
-            
+
+        # DON'T replace any characters - keep French accents as they are
         return text
-        
+
     except Exception:
         # Ultimate fallback - return a safe string
         return u"Text_Error"
-    
+  
 
 if __name__ == '__main__':
     # Run the audit and get results

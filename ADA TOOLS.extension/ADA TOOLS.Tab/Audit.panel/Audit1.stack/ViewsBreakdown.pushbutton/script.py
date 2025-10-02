@@ -1,131 +1,231 @@
 # -*- coding: utf-8 -*-
-"""Views Breakdown by Type
-This script provides a detailed breakdown of views by type, showing which are placed on sheets.
-"""
-
 __title__ = "Views Breakdown"
 __author__ = "Almog Davidson"
+__doc__ = "Export all views with their type and sheet placement to CSV"
 
-from pyrevit import revit, DB, script
-import os
-import datetime
-import re
+from pyrevit import revit, DB, forms, script
+from System.Collections.Generic import List
 import csv
+import os
+import codecs
 
 # Get the current document
 doc = revit.doc
-
 folder_name = doc.Title
 
-def Views_Breakdown():
-    # Get all views in the project (excluding view templates)
-    all_views = DB.FilteredElementCollector(doc)\
-                  .OfClass(DB.View)\
-                  .WhereElementIsNotElementType()\
-                  .ToElements()
+def get_view_category(view):
+    """Get the view category (FloorPlan, Section, CeilingPlan, etc.)"""
+    try:
+        return view.ViewType.ToString()
+    except:
+        return "Unknown"
 
-    # Filter out view templates
-    views = [view for view in all_views if not view.IsTemplate]
+def build_sheet_lookup_tables():
+    """Build lookup dictionaries for fast sheet placement checking"""
+    view_to_sheet = {}
+    schedule_to_sheet = {}
 
-    # Get all viewports (views placed on sheets)
-    all_viewports = DB.FilteredElementCollector(doc)\
-                      .OfClass(DB.Viewport)\
-                      .ToElements()
+    # Get all sheets once
+    sheets = DB.FilteredElementCollector(doc)\
+        .OfClass(DB.ViewSheet)\
+        .ToElements()
 
-    # Get unique view IDs that are placed on sheets
-    placed_view_ids = set()
-    for viewport in all_viewports:
-        view_id = viewport.ViewId
-        placed_view_ids.add(view_id)
+    # Build viewport lookup (for regular views)
+    for sheet in sheets:
+        sheet_info = u"{} - {}".format(sheet.SheetNumber, sheet.Name)
+        viewport_ids = sheet.GetAllViewports()
+        for vp_id in viewport_ids:
+            viewport = doc.GetElement(vp_id)
+            view_to_sheet[viewport.ViewId] = sheet_info
 
-    # Count totals
-    total_views = len(views)
-    placed_views_count = len(placed_view_ids)
-    unplaced_views_count = total_views - placed_views_count
+    # Build schedule instance lookup (for schedules)
+    schedule_instances = DB.FilteredElementCollector(doc)\
+        .OfClass(DB.ScheduleSheetInstance)\
+        .ToElements()
 
-    # Prepare detailed breakdown by view type
-    view_types_breakdown = {}
-    placed_view_types_breakdown = {}
+    for instance in schedule_instances:
+        sheet = doc.GetElement(instance.OwnerViewId)
+        if sheet:
+            sheet_info = u"{} - {}".format(sheet.SheetNumber, sheet.Name)
+            schedule_to_sheet[instance.ScheduleId] = sheet_info
 
-    for view in views:
-        view_type_name = view.ViewType.ToString()
+    return view_to_sheet, schedule_to_sheet
 
-        # Count all views by type
-        if view_type_name not in view_types_breakdown:
-            view_types_breakdown[view_type_name] = 0
-        view_types_breakdown[view_type_name] += 1
+def main():
+    # Build lookup tables once at the beginning
+    view_to_sheet, schedule_to_sheet = build_sheet_lookup_tables()
 
-        # Count placed views by type
-        if view.Id in placed_view_ids:
-            if view_type_name not in placed_view_types_breakdown:
-                placed_view_types_breakdown[view_type_name] = 0
-            placed_view_types_breakdown[view_type_name] += 1
+    # Collect all views (excluding view templates)
+    views_collector = DB.FilteredElementCollector(doc)\
+        .OfClass(DB.View)\
+        .ToElements()
 
-    # Main summary
-    print("=== View Count Summary ===")
-    print("| View Type | On Sheets | Not on Sheets |")
+    # Collect all schedules separately
+    schedules_collector = DB.FilteredElementCollector(doc)\
+        .OfClass(DB.ViewSchedule)\
+        .ToElements()
 
-    results_views = []
-    for view_type in sorted(view_types_breakdown.keys()):
-        total_count = view_types_breakdown[view_type]
-        placed_count = placed_view_types_breakdown.get(view_type, 0)
-        unplaced_count = total_count - placed_count
+    # Filter out view templates, system views, and DrawingSheet views
+    views = [v for v in views_collector 
+             if not v.IsTemplate 
+             and v.CanBePrinted
+             and v.ViewType != DB.ViewType.DrawingSheet]  # Exclude sheets
 
-        print("| {0} | {1} | {2} |".format(
-            view_type, 
-            placed_count, 
-            unplaced_count
-        ))
+    # Filter out schedule templates and revision schedules
+    schedules = [s for s in schedules_collector 
+                 if not s.IsTemplate 
+                 and not s.Name.startswith("<Revision Schedule>")]
+
+    # Combine views and schedules
+    all_views = list(views) + list(schedules)
+
+    if not all_views:
+        forms.alert("No views found in the project.", exitscript=True)
+
+    # Prepare data for CSV
+    data = []
+    data.append([u"View Name", u"View Category", u"Placed On Sheet"])
+
+    # Counters for summary
+    views_on_sheets = 0
+    views_not_placed = 0
+
+    # Dictionary to track view type distribution
+    view_type_distribution = {}
+
+    # Process each view using lookup tables
+    for view in all_views:
+        view_name = view.Name
+        view_category = get_view_category(view)
+
+        # Use lookup tables for fast sheet info retrieval
+        if isinstance(view, DB.ViewSchedule):
+            sheet_info = schedule_to_sheet.get(view.Id, u"NOT PLACED ON SHEET")
+        else:
+            sheet_info = view_to_sheet.get(view.Id, u"NOT PLACED ON SHEET")
+
+        # Count for summary
+        if sheet_info == u"NOT PLACED ON SHEET":
+            views_not_placed += 1
+            is_on_sheet = False
+        else:
+            views_on_sheets += 1
+            is_on_sheet = True
+
+        # Track view type distribution
+        if view_category not in view_type_distribution:
+            view_type_distribution[view_category] = {'on_sheets': 0, 'not_on_sheets': 0}
         
-        # Add to results for CSV export
-        results_views.append([view_type, placed_count, unplaced_count, total_count])
+        if is_on_sheet:
+            view_type_distribution[view_category]['on_sheets'] += 1
+        else:
+            view_type_distribution[view_category]['not_on_sheets'] += 1
 
-    return results_views
+        data.append([view_name, view_category, sheet_info])
 
-def save_to_csv(results_views):
-    """Save the views breakdown results to a CSV file"""
+    # Get the output window
+    output = script.get_output()
+
+    # Print results to PyRevit output window
+    output.print_md("# Views Report")
+    output.print_md("---")
+    output.print_md("**Project:** {}".format(doc.Title))
+    output.print_md("**Total Views:** {}".format(len(all_views)))
+    output.print_md("**Views on Sheets:** {}".format(views_on_sheets))
+    output.print_md("**Views NOT Placed:** {}".format(views_not_placed))
+    output.print_md("---")
+    output.print_md("")
+
+    # Create a formatted table
+    output.print_md("| View Name | View Category | Placed On Sheet |")
+    output.print_md("|-----------|---------------|-----------------|")
+
+    for row in data[1:]:  # Skip header row
+        view_name = row[0].replace("|", "\\|")  # Escape pipe characters
+        view_category = row[1].replace("|", "\\|")
+        sheet_info = row[2].replace("|", "\\|")
+        output.print_md(u"| {} | {} | {} |".format(view_name, view_category, sheet_info))
+
+    output.print_md("")
+    output.print_md("---")
+    output.print_md("")
+
+    # Print View Type Distribution
+    output.print_md("## View Type Distribution")
+    output.print_md("")
+    output.print_md("| View Type | Sum of On Sheets | Sum of Not on Sheets |")
+    output.print_md("|-----------|------------------|----------------------|")
     
-    # Define the output folder
+    # Sort by view type name for consistent output
+    for view_type in sorted(view_type_distribution.keys()):
+        counts = view_type_distribution[view_type]
+        output.print_md("| {} | {} | {} |".format(
+            view_type, 
+            counts['on_sheets'], 
+            counts['not_on_sheets']
+        ))
+    
+    output.print_md("")
+    output.print_md("---")
+    output.print_md("")
+
+    # Define the output folder - change this path as needed
     output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
 
     # Create the folder if it doesn't exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    # Clean document title for filename
-    doc_title = doc.Title or "Unknown"
-    clean_title = re.sub(r'[<>:"/\\|?*]', '_', doc_title)
+    # Save detailed element breakdown
+    filename_detailed = "Views_Breakdown_Detailed.csv"
+    filepath_detailed = os.path.join(output_folder, filename_detailed)
 
-    filename = "Views_Breakdown.csv"
-    filepath = os.path.join(output_folder, filename)
+    # Save view type distribution
+    filename_distribution = "ViewType_Distribution.csv"
+    filepath_distribution = os.path.join(output_folder, filename_distribution)
 
+    # Write to CSV with UTF-8 encoding including BOM for Excel compatibility
     try:
-        with open(filepath, 'w') as csvfile:
-            writer = csv.writer(csvfile)
-            
-            # Write timestamp header
-            writer.writerow(["Views Breakdown Report"])
-            writer.writerow(["Generated on: {}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))])
-            writer.writerow(["Document: {}".format(doc.Title or "Unknown")])
-            writer.writerow([])  # Empty row for spacing
-            
-            # Write column headers
-            writer.writerow(["View Type", "On Sheets", "Not on Sheets", "Total"])
-            
-            # Write data rows
-            for result in results_views:
-                writer.writerow(result)
-
-        print("CSV report saved to: {}".format(filepath))
-        return filepath
+        import codecs
         
+        # Write detailed CSV
+        with codecs.open(filepath_detailed, 'w', encoding='utf-8-sig') as csvfile:
+            writer = csv.writer(csvfile)
+            # Write header
+            writer.writerow(['View Name', 'View Category', 'Placed On Sheet'])
+            # Write data
+            writer.writerows(data[1:])  # Skip header row since we're writing it separately
+
+        # Write view type distribution CSV
+        with codecs.open(filepath_distribution, 'w', encoding='utf-8-sig') as csvfile:
+            writer = csv.writer(csvfile)
+            # Write header
+            writer.writerow(['View Type', 'On Sheets', 'Not on Sheets'])
+            # Write distribution data - sorted by view type
+            for view_type in sorted(view_type_distribution.keys()):
+                counts = view_type_distribution[view_type]
+                writer.writerow([view_type, counts['on_sheets'], counts['not_on_sheets']])
+
+        # Print success message in PyRevit output
+        output.print_md("## :white_heavy_check_mark: Export Successful!")
+        output.print_md("")
+        output.print_md("**Files saved to:**")
+        output.print_md("```")
+        output.print_md(filepath_detailed)
+        output.print_md(filepath_distribution)
+        output.print_md("```")
+        output.print_md("")
+        output.print_md("[Click here to open folder]({})".format(output_folder))
+
     except Exception as e:
-        print("Error saving CSV file: {}".format(str(e)))
-        return None
+        # Print error message in PyRevit output
+        output.print_md("## :x: Export Failed!")
+        output.print_md("")
+        output.print_md("**Error:**")
+        output.print_md("```")
+        output.print_md(str(e))
+        output.print_md("```")
 
+# Run the script
 if __name__ == '__main__':
-    # Run the breakdown and get results
-    results_views = Views_Breakdown()
-
-    # Save results to CSV
-    save_to_csv(results_views)
+    main()
