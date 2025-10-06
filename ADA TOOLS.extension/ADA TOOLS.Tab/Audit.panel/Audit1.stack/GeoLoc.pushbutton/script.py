@@ -158,7 +158,7 @@ def get_internal_origin(unit):
     proj_info["North/South ({0})".format(unit)] = "{:.4f}".format(ns_converted)
     proj_info["East/West ({0})".format(unit)] = "{:.4f}".format(ew_converted)
     proj_info["Elevation ({0})".format(unit)] = "{:.4f}".format(elev_converted)
-    proj_info["Angle to True North (degrees)"] = "{:.4f}".format(360-angle_degrees)
+    proj_info["Angle to True North (degrees)"] = "{:.4f}".format(angle_degrees)
 
     return proj_info
 

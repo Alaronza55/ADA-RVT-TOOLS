@@ -76,7 +76,7 @@ def get_revit_link_filename(link):
     """Get the actual file name of the Revit link with improved fallback methods"""
     try:
         link_type = doc.GetElement(link.GetTypeId())
-        
+
         if not link_type:
             return "Unknown_Type_{}.rvt".format(link.Id.IntegerValue)
 
@@ -107,7 +107,7 @@ def get_revit_link_filename(link):
                                 return filename
                 except:
                     pass
-                
+
                 # Try GetAbsolutePath
                 try:
                     abs_path = exfs.GetAbsolutePath()
@@ -253,7 +253,7 @@ def clean_revit_type_name(type_name):
     # Remove common prefixes
     prefixes = ["Revit Link ", "Link ", "Type ", "RVT ", "RevitLinkType "]
     clean_name = type_name.strip()
-    
+
     for prefix in prefixes:
         if clean_name.startswith(prefix):
             clean_name = clean_name[len(prefix):].strip()
@@ -276,13 +276,13 @@ def get_revit_link_status(link):
         link_type = doc.GetElement(link.GetTypeId())
         if not link_type:
             return "Unknown"
-        
+
         try:
             exfs = link_type.GetExternalFileReference()
             if exfs:
                 status = exfs.GetLinkedFileStatus()
                 status_str = status.ToString()
-                
+
                 # Clean up the status string for better readability
                 if status_str == "Loaded":
                     return "Loaded"
@@ -407,7 +407,7 @@ def check_model():
     link_csv_data.append(link_row_head)
 
     if not revit_links:
-        no_link_row = ["No Revit links found", "-", "-", "-", "-", "-"]
+        no_link_row = ["No Revit links found", "null", "-", "-", "-", "null"]
         link_table_data.append(no_link_row)
         link_csv_data.append(no_link_row)
     else:
@@ -415,7 +415,7 @@ def check_model():
         for link in revit_links:
             # Get the actual file name
             link_filename = get_revit_link_filename(link)
-            
+
             # Get load status
             load_status = get_revit_link_status(link)
 
