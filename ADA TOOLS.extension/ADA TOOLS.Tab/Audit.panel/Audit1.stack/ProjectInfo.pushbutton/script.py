@@ -22,7 +22,7 @@ def format_file_size(size_bytes):
     """Convert file size from bytes to human-readable format"""
     if size_bytes == 0:
         return "0 B"
-    
+
     size_names = ["B", "KB", "MB", "GB", "TB"]
     import math
     i = int(math.floor(math.log(size_bytes, 1024)))
@@ -54,7 +54,7 @@ def project_info():
             file_size_formatted = format_file_size(file_size)
             results_info.append("File Size: {} ({:,} bytes)".format(file_size_formatted, file_size))
         except Exception as e:
-            results_info.append("File Size: Could not determine file size - {}".format(str(e)))
+            results_info.append("File Size: Cloud Model could not retrieve file size")
 
         # Check if workshared
         if doc.IsWorkshared:
@@ -68,7 +68,7 @@ def project_info():
                     if central_path_string:
                         central_file_name = os.path.basename(central_path_string)
                         results_info.append("Central Model File Name: {}".format(central_file_name))
-                        
+
                         # Try to get central file size
                         try:
                             if os.path.exists(central_path_string):
@@ -78,7 +78,7 @@ def project_info():
                             else:
                                 results_info.append("Central File Size: Central file not accessible")
                         except Exception as e:
-                            results_info.append("Central File Size: Could not determine - {}".format(str(e)))
+                            results_info.append("Central File Size: Cloud Model, could not retrieve file size")
                     else:
                         results_info.append("Central Model Path: {}".format(str(central_path)))
             except:
