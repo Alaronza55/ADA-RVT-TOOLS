@@ -3,6 +3,9 @@ import os
 import tempfile
 import csv
 
+__title__ = "Family Sizes"
+__author__ = "Almog Davidson"
+
 doc = __revit__.ActiveUIDocument.Document
 
 families = FilteredElementCollector(doc).OfClass(Family).ToElements()
@@ -102,7 +105,7 @@ try:
             writer.writerow({
                 'Family Name': fam['Family Name'],
                 'Size (KB)': round(fam['Size (KB)'], 2),
-                'Size (MB)': round(fam['Size (MB)'], 4),
+                'Size (MB)': round(fam['Size (MB)'], 2),
                 'Number of Types': fam['Number of Types']
             })
 
