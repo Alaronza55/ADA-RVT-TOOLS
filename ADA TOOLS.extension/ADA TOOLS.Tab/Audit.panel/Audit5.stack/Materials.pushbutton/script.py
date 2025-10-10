@@ -5,77 +5,111 @@ Shows all materials in the project and identifies user-created materials.
 __title__ = "List Materials"
 __author__ = "Assistant"
 
-from Autodesk.Revit.DB import FilteredElementCollector, Material, BuiltInCategory
-from pyrevit import revit, DB, forms, script
+from Autodesk.Revit.DB import FilteredElementCollector, Material
+from pyrevit import revit, script
 
 # Get the current document
 doc = revit.doc
-
-# Get output window
 output = script.get_output()
 
-# Collect all materials in the project
-materials = FilteredElementCollector(doc)\
-    .OfClass(Material)\
-    .ToElements()
-
-# Sort materials by name
-materials = sorted(materials, key=lambda m: m.Name)
-
-# Separate user-created and system materials
-user_materials = []
-system_materials = []
-
-for material in materials:
-    # Check if material is user-created
-    # User-created materials typically have an Id > 0 and are not from linked files
-    if material.Id.IntegerValue > 0:
-        # Additional check: system materials often come from template or are built-in
-        # We can check the Material Class or if it was created by user
-        try:
-            # Materials that come with template/system typically have specific patterns
-            # User materials are those added after project creation
-            # A simple heuristic: check if the material can be deleted (user-created can usually be deleted)
+try:
+    # Collect all materials
+    materials = FilteredElementCollector(doc).OfClass(Material).ToElements()
+    materials = sorted(materials, key=lambda m: m.Name)
+    
+    # ID Thresholds - adjust these based on your observations
+    SYSTEM_ID_THRESHOLD = 500000
+    
+    user_materials = []
+    system_materials = []
+    
+    for material in materials:
+        mat_id = material.Id.IntegerValue
+        mat_name = material.Name
+        
+        # Simple heuristic: High IDs are typically user-created
+        if mat_id > SYSTEM_ID_THRESHOLD:
             user_materials.append(material)
-        except:
+        else:
             system_materials.append(material)
-
-# Print header
-output.print_md("# Materials in Project")
-output.print_md("---")
-
-# Print summary
-total_count = len(materials)
-user_count = len(user_materials)
-
-output.print_md("## Summary")
-output.print_md("**Total Materials:** {}".format(total_count))
-output.print_md("**User-Created Materials:** {}".format(user_count))
-output.print_md("**System/Template Materials:** {}".format(total_count - user_count))
-output.print_md("---")
-
-# Print all materials with details
-output.print_md("## All Materials List")
-output.print_md("")
-
-# Create a table
-output.print_md("| # | Material Name | Material ID | User Created |")
-output.print_md("|---|---------------|-------------|--------------|")
-
-for idx, material in enumerate(materials, 1):
-    mat_name = material.Name
-    mat_id = material.Id.IntegerValue
     
-    # Determine if user-created
-    # Note: This is a heuristic approach
-    is_user_created = "✓" if material in user_materials else "✗"
+    # Print Results
+    output.print_md("# Materials Analysis Report")
+    output.print_md("---")
     
-    output.print_md("| {} | {} | {} | {} |".format(
-        idx,
-        output.linkify(material.Id),
-        mat_id,
-        is_user_created
-    ))
+    # Summary
+    total = len(materials)
+    user_count = len(user_materials)
+    system_count = len(system_materials)
+    
+    output.print_md("## Summary Statistics")
+    output.print_md("")
+    output.print_md("- **Total Materials:** {0}".format(total))
+    output.print_md("- **User-Created (ID > {0}):** {1} ({2}%)".format(
+        SYSTEM_ID_THRESHOLD,
+        user_count, 
+        round((user_count*100.0/total), 1) if total > 0 else 0))
+    output.print_md("- **System/Template (ID <= {0}):** {1} ({2}%)".format(
+        SYSTEM_ID_THRESHOLD,
+        system_count,
+        round((system_count*100.0/total), 1) if total > 0 else 0))
+    output.print_md("")
+    output.print_md("---")
+    
+    # User Materials
+    if user_materials:
+        output.print_md("## USER-CREATED MATERIALS ({0})".format(user_count))
+        output.print_md("")
+        user_materials_sorted = sorted(user_materials, key=lambda x: x.Id.IntegerValue, reverse=True)
+        for idx, mat in enumerate(user_materials_sorted, 1):
+            output.print_md("{0}. {1} **{2}** - ID: {3}".format(
+                idx,
+                output.linkify(mat.Id),
+                mat.Name,
+                mat.Id.IntegerValue
+            ))
+        output.print_md("")
+        output.print_md("---")
+    
+    # System Materials (show first 50)
+    if system_materials:
+        output.print_md("## SYSTEM/TEMPLATE MATERIALS ({0})".format(system_count))
+        output.print_md("")
+        system_materials_sorted = sorted(system_materials, key=lambda x: x.Id.IntegerValue)
+        display_count = min(50, system_count)
+        
+        for idx, mat in enumerate(system_materials_sorted[:display_count], 1):
+            output.print_md("{0}. {1} **{2}** - ID: {3}".format(
+                idx,
+                output.linkify(mat.Id),
+                mat.Name,
+                mat.Id.IntegerValue
+            ))
+        
+        if system_count > display_count:
+            output.print_md("")
+            output.print_md("*...and {0} more system materials*".format(system_count - display_count))
+        
+        output.print_md("")
+        output.print_md("---")
+    
+    # Show ID distribution
+    output.print_md("## ID Distribution")
+    output.print_md("")
+    if materials:
+        sorted_mats = sorted(materials, key=lambda x: x.Id.IntegerValue)
+        output.print_md("**Lowest Material ID:** {0}".format(sorted_mats[0].Id.IntegerValue))
+        output.print_md("**Highest Material ID:** {0}".format(sorted_mats[-1].Id.IntegerValue))
+    output.print_md("")
+    output.print_md("*Threshold used: {0}*".format(SYSTEM_ID_THRESHOLD))
+    output.print_md("")
+    output.print_md("*Adjust SYSTEM_ID_THRESHOLD in the script if needed based on the ID distribution above.*")
 
-output.print_md("---")
-output.print_md("*Note: User-created determination is based on material properties and may not be 100% accurate.*")
+except Exception as e:
+    import traceback
+    output.print_md("# Error occurred:")
+    output.print_md("```")
+    output.print_md(str(e))
+    output.print_md("")
+    output.print_md(traceback.format_exc())
+    output.print_md("```")
