@@ -11,6 +11,8 @@ from Autodesk.Revit.DB import (FilteredElementCollector, Material, ElementId,
                                 Options, Solid, Face, StorageType, ViewDetailLevel,
                                 GeometryInstance, HostObjAttributes)
 from pyrevit import revit, script
+import os
+import csv
 
 # Get the current document
 doc = revit.doc
@@ -265,6 +267,48 @@ try:
             ))
         output.print_md("")
         output.print_md("---")
+
+        # Export to CSV
+    folder_name = doc.Title
+    output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
+
+    # Create the folder if it doesn't exist
+    if not os.path.exists(output_folder):
+        try:
+            os.makedirs(output_folder)
+            print("**Created folder:** `{}`".format(output_folder))
+        except Exception as e:
+            print("**Error creating folder:** {}".format(str(e)))
+            print("**Attempting to save to default location...**")
+            output_folder = os.path.expanduser("~\\Desktop")
+
+    # Save detailed element breakdown
+    filename_detailed = "Material_Usage.csv"
+    filepath_detailed = os.path.join(output_folder, filename_detailed)
+    try:
+        with open(filepath_detailed, 'wb') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            # Write header
+            csvwriter.writerow(['Material Name', 'Used', 'Count'])
+            
+            # Write used materials
+            for mat, count in used_materials:
+                csvwriter.writerow([mat.Name, 'Yes', count])
+            
+            # Write unused materials
+            for mat in unused_materials:
+                csvwriter.writerow([mat.Name, 'No', 0])
+        
+        output.print_md("## CSV Export Complete")
+        output.print_md("")
+        output.print_md("*A CSV file has been exported to: **{0}**".format(filepath_detailed))
+        output.print_md("*Columns: 'Material Name', 'Used' (Yes/No), and 'Count' (number of elements using the material).")
+    except Exception as csv_error:
+        output.print_md("# Error exporting CSV:")
+        output.print_md("```")
+        output.print_md(str(csv_error))
+        output.print_md("```")
+
 
 except Exception as e:
     import traceback
