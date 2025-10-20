@@ -75,24 +75,32 @@ if csv_data:
             print("**Error creating folder:** {}".format(str(e)))
             print("**Attempting to save to default location...**")
             output_folder = os.path.expanduser("~\\Desktop")
-        
-        # Create filename with project name
-        project_name = doc.Title
-        csv_filename = "GroupsAndAssemblies.csv".format(project_name)
-        csv_filepath = os.path.join(output_folder, csv_filename)
-        
-        # Write CSV file
+
+    # Create filename with project name
+    project_name = doc.Title
+    csv_filename = "GroupsAndAssemblies.csv"
+    csv_filepath = os.path.join(output_folder, csv_filename)
+
+    # Write CSV file
+    try:
         with open(csv_filepath, 'wb') as csvfile:
             writer = csv.writer(csvfile)
             # Write header
             writer.writerow(['Name', 'Type'])
             # Write data
             writer.writerows(csv_data)
-        
+
         output.print_md("\n---")
         output.print_md("### CSV Export")
         print("CSV file exported successfully!")
         print("Location: {}".format(csv_filepath))
-    
+        
+    except Exception as e:
+        output.print_md("\n---")
+        output.print_md("### CSV Export - ERROR")
+        print("Failed to save CSV file!")
+        print("Error: {}".format(str(e)))
+        print("Attempted location: {}".format(csv_filepath))
+
 else:
     print("\nNo groups or assemblies found in the project.")
