@@ -29,18 +29,20 @@ csv_data = []
 # Process Groups
 for group in groups:
     group_name = group.Name
+    group_id = group.Id.IntegerValue
     # Determine if Model or Detail Group
     if group.GroupType.GetType().Name == "GroupType":
         group_type = "Model Group"
     else:
         group_type = "Detail Group"
     
-    csv_data.append([group_name, group_type])
+    csv_data.append([group_name, group_type, group_id])
 
 # Process Assemblies
 for assembly in assemblies:
     assembly_name = assembly.AssemblyTypeName
-    csv_data.append([assembly_name, "Assembly"])
+    assembly_id = assembly.Id.IntegerValue
+    csv_data.append([assembly_name, "Assembly", assembly_id])
 
 # Display Results
 model_groups = [d for d in csv_data if d[1] == "Model Group"]
@@ -86,7 +88,7 @@ if csv_data:
         with open(csv_filepath, 'wb') as csvfile:
             writer = csv.writer(csvfile)
             # Write header
-            writer.writerow(['Name', 'Type'])
+            writer.writerow(['Name', 'Type', 'ID'])
             # Write data
             writer.writerows(csv_data)
 
