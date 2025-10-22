@@ -4,7 +4,7 @@ Displays the total number of Groups and Assemblies in the current project and ex
 __title__ = "Count Groups\nand Assemblies"
 __author__ = "Almog Davidson"
 
-from Autodesk.Revit.DB import FilteredElementCollector, Group, AssemblyInstance
+from Autodesk.Revit.DB import FilteredElementCollector, Group, AssemblyInstance, BuiltInCategory
 from pyrevit import forms, script
 import csv
 import os
@@ -30,11 +30,25 @@ csv_data = []
 for group in groups:
     group_name = group.Name
     group_id = group.Id.IntegerValue
-    # Determine if Model or Detail Group
-    if group.GroupType.GetType().Name == "GroupType":
-        group_type = "Model Group"
+    
+    # Get the group type to check its category
+    group_type_id = group.GetTypeId()
+    group_type_elem = doc.GetElement(group_type_id)
+    
+    # Check the category of the group type
+    if group_type_elem and group_type_elem.Category:
+        category_id = group_type_elem.Category.Id.IntegerValue
+        
+        # Model groups have category OST_IOSModelGroups (-2000095)
+        # Detail groups have category OST_IOSDetailGroups (-2000095)
+        if category_id == int(BuiltInCategory.OST_IOSDetailGroups):
+            group_type = "Detail Group"
+        elif category_id == int(BuiltInCategory.OST_IOSModelGroups):
+            group_type = "Model Group"
+        else:
+            group_type = "Unknown Group (Category: {})".format(category_id)
     else:
-        group_type = "Detail Group"
+        group_type = "Unknown Group (No Category)"
     
     csv_data.append([group_name, group_type, group_id])
 

@@ -132,10 +132,14 @@ def get_all_line_patterns_detailed():
 
     return all_patterns
 
+import codecs
+
 def export_to_csv(patterns, file_path):
     """Export line patterns to a CSV file"""
     try:
-        with open(file_path, 'w') as f:
+        # Changed: Using codecs.open for Python 2.7 compatibility
+        # utf-8-sig adds BOM for Excel compatibility
+        with codecs.open(file_path, 'w', encoding='utf-8-sig') as f:
             # Updated header with Detection Method column
             f.write("Name,ID,Imported,Detection_Method,Segment_Count,Pattern_Definition\n")
 
@@ -177,7 +181,7 @@ def export_to_csv(patterns, file_path):
         forms.alert("Error writing CSV file: {}".format(str(e)))
         output.print_md("**CSV Export Error:** {}".format(str(e)))
         return False
-
+    
 def main():
     try:
         output.print_md("## Collecting All Line Patterns...")

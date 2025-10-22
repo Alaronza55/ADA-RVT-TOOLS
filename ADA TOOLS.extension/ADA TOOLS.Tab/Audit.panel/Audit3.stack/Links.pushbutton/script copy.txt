@@ -21,38 +21,19 @@ def collect_revitlinks():
 
 def get_load_stat(cad, is_link):
     """Loaded status from the import instance's CADLinkType"""
-    try:
-        cad_type = doc.GetElement(cad.GetTypeId())
-        
-        if not cad_type:
-            return "Unknown"
-        
-        # If it's not a link, it's imported
-        if not is_link:
-            return "IMPORTED"
-        
-        # Try to get external file reference (only works for linked files)
-        try:
-            exfs = cad_type.GetExternalFileReference()
-            if exfs:
-                status = exfs.GetLinkedFileStatus().ToString()
-                if status == "Loaded":
-                    return "Loaded"
-                elif status == "NotFound":
-                    return "Not Found"
-                elif status == "Unloaded":
-                    return "Unloaded"
-                else:
-                    return status
-            else:
-                return "No Reference"
-        except Exception as e:
-            # If GetExternalFileReference fails, the element doesn't represent an external file
-            # This can happen with imported (not linked) CAD files
-            return "IMPORTED"
-    
-    except Exception as e:
-        return "Unknown"
+    cad_type = doc.GetElement(cad.GetTypeId())
+
+    if not is_link:
+        return "IMPORTED"
+    exfs = cad_type.GetExternalFileReference()
+    status = exfs.GetLinkedFileStatus().ToString()
+    if status == "Loaded":
+        return "Loaded"
+    if status == "NotFound":
+        return "NotFound"
+    if status == "Unloaded":
+        return "Unloaded"
+    return status
 
 def get_views_containing_cad(cad):
     """Get all views where the CAD instance appears"""
