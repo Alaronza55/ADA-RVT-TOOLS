@@ -328,6 +328,7 @@ def get_revit_link_status(link):
                 return "Unknown"
     except Exception as e:
         return "Unknown"
+
 def check_model():
     output = script.get_output()
     output.close_others()
@@ -348,7 +349,7 @@ def check_model():
     cad_csv_data.append(cad_row_head)
 
     if not cad_instances:
-        no_cad_row = ["No CAD instances found", "-", "-", "-", "-", "-", "-"]
+        no_cad_row = ["No CAD file found", "-", "-", "-", "-", "-", "-"]
         cad_table_data.append(no_cad_row)
         cad_csv_data.append(no_cad_row)
     else:
