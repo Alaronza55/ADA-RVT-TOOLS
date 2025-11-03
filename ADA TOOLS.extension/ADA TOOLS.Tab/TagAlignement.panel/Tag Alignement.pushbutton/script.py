@@ -449,4 +449,4 @@ except Exception as e:
     if "cancelled" in str(e).lower():
         forms.alert("Selection cancelled.", title="Cancelled")
     else:
-        forms.alert("Error: {}".format(str(e)), title="Error"
+        forms.alert("Error: {}".format(str(e)), title="Error")
