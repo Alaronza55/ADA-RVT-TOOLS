@@ -1,631 +1,1213 @@
 # -*- coding: utf-8 -*-
+"""Select Element in Linked Model
+This script allows you to select an element inside a linked Revit model.
 """
-Places a "VAL_M_Round Face Opening Solid_RVT2023" family 
-at the base of the intersection between structural and MEP elements,
-hosted on the structural element's face
-"""
-__title__ = 'Intersection\nOpening'
-__author__ = 'Assistant'
 
-import clr
+__title__ = 'Select Element\nin Link'
+__author__ = 'Your Name'
+
+from Autodesk.Revit.DB import *
+from Autodesk.Revit.UI import *
+from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
+from pyrevit import revit, DB, UI, forms
 import math
-import System
-from System.Collections.Generic import List
 
-from pyrevit import forms, script
-from pyrevit import revit, DB, UI
-
-from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
-from Autodesk.Revit.DB import (
-    ElementId, Wall, Floor, FamilyInstance, BuiltInCategory, 
-    Options, Solid, GeometryElement, BooleanOperationsUtils, 
-    BooleanOperationsType, Transaction, Line, XYZ,
-    FilteredElementCollector, FamilySymbol, Level, Face,
-    CurveLoop, SolidOptions, GeometryCreationUtilities,
-    BuiltInParameter, UnitUtils, Transform, SolidUtils,
-    Reference, PlanarFace, UV, GeometryCreationUtilities, 
-    BRepBuilderEdgeGeometry
-)
-
-# Check Revit API version and choose appropriate unit type
-try:
-    # For newer Revit versions (2022+)
-    from Autodesk.Revit.DB import UnitTypeId
-    length_unit = UnitTypeId.Millimeters
-    use_unit_type_id = True
-except ImportError:
-    # For older Revit versions
-    from Autodesk.Revit.DB import DisplayUnitType
-    length_unit = DisplayUnitType.DUT_MILLIMETERS
-    use_unit_type_id = False
-
-# Set up the output
-output = script.get_output()
-output.close_others()
-
-# Get document and UI document
+# Get the current document and UI document
 doc = revit.doc
 uidoc = revit.uidoc
 
-# Create selection filter for structural elements
-class StructuralElementsFilter(ISelectionFilter):
+
+class LinkedElementSelectionFilter(ISelectionFilter):
+    """Selection filter to allow only linked elements"""
+    
     def AllowElement(self, element):
-        if isinstance(element, (Wall, Floor)):
+        """Allow selection of RevitLinkInstance"""
+        if isinstance(element, RevitLinkInstance):
             return True
-        
-        if isinstance(element, FamilyInstance):
-            category = element.Category
-            if category and (category.Id.IntegerValue == 
-                            int(BuiltInCategory.OST_StructuralColumns) or 
-                            category.Id.IntegerValue == 
-                            int(BuiltInCategory.OST_StructuralFraming)):
-                return True
-        
         return False
     
-    def AllowReference(self, reference, position):
-        return False
+    def AllowReference(self, reference, point):
+        """Allow selection of elements within links"""
+        return True
 
-# Create selection filter for MEP elements
-class MEPElementsFilter(ISelectionFilter):
+
+class StructuralLinkedElementFilter(ISelectionFilter):
+    """Selection filter to allow only structural elements in linked models"""
+    
+    def __init__(self, linked_doc):
+        self.doc = linked_doc
+    
     def AllowElement(self, element):
-        category = element.Category
-        if not category:
-            return False
-            
-        # OST_DuctCurves, OST_PipeCurves, OST_Conduit, OST_MechanicalEquipment, OST_ElectricalEquipment
-        valid_category_ids = [
-            int(BuiltInCategory.OST_DuctCurves),
-            int(BuiltInCategory.OST_PipeCurves),
-            int(BuiltInCategory.OST_Conduit),
-            int(BuiltInCategory.OST_MechanicalEquipment),
-            int(BuiltInCategory.OST_ElectricalEquipment),
-            int(BuiltInCategory.OST_CableTray),
-            int(BuiltInCategory.OST_FlexDuctCurves),
-            int(BuiltInCategory.OST_FlexPipeCurves)
-        ]
-        
-        return category.Id.IntegerValue in valid_category_ids
-    
-    def AllowReference(self, reference, position):
+        """Allow selection of RevitLinkInstance"""
+        if isinstance(element, RevitLinkInstance):
+            return True
         return False
-
-def get_element_geometry(element, options=None):
-    """Gets the geometry of an element."""
-    if not options:
-        options = Options()
-        options.ComputeReferences = True
-        options.DetailLevel = DB.ViewDetailLevel.Fine
-        
-    geometry = element.get_Geometry(options)
-    if not geometry:
-        return None
-        
-    # Flatten the geometry ino a list of solids
-    solids = []
     
-    # First level of iteration gets GeometryObjects
-    for geo_obj in geometry:
-        # If we have an instance, we need to get its symbol geometry
-        if isinstance(geo_obj, DB.GeometryInstance):
-            # Get the instance geometry in model coordinates
-            instance_geo = geo_obj.GetInstanceGeometry()
-            for instance_obj in instance_geo:
-                if isinstance(instance_obj, DB.Solid) and instance_obj.Volume > 0:
-                    solids.append(instance_obj)
-        # Direct solid
-        elif isinstance(geo_obj, DB.Solid) and geo_obj.Volume > 0:
-            solids.append(geo_obj)
-            
-    # If we found solids, return them
-    if solids:
-        return solids
-    
-    return None
-
-def get_largest_solid(solids):
-    """Returns the largest solid from a list of solids."""
-    largest_volume = 0
-    largest_solid = None
-    
-    for solid in solids:
-        if solid.Volume > largest_volume:
-            largest_volume = solid.Volume
-            largest_solid = solid
-            
-    return largest_solid
-
-def get_structural_face_at_intersection(struct_element, intersection_solid):
-    """Find the face of the structural element that should host the opening"""
-    if not struct_element or not intersection_solid:
-        return None
-    
-    # Get the geometry of the structural element
-    options = Options()
-    options.ComputeReferences = True
-    options.DetailLevel = DB.ViewDetailLevel.Fine
-    
-    struct_geom = struct_element.get_Geometry(options)
-    if not struct_geom:
-        return None
-    
-    # Get the bounding box of the intersection solid to find its center
-    bbox = intersection_solid.GetBoundingBox()
-    if not bbox:
-        return None
-    
-    # Calculate the center of the intersection
-    intersection_center = XYZ(
-        (bbox.Min.X + bbox.Max.X) / 2,
-        (bbox.Min.Y + bbox.Max.Y) / 2,
-        (bbox.Min.Z + bbox.Max.Z) / 2
-    )
-    
-    # Find the closest face on the structural element to the intersection center
-    min_distance = float('inf')
-    closest_face_ref = None
-    
-    for geom_obj in struct_geom:
-        if isinstance(geom_obj, Solid):
-            for face in geom_obj.Faces:
-                # For each face, find the closest point to the intersection center
-                try:
-                    uv_point = face.Project(intersection_center).UVPoint
-                    face_point = face.Evaluate(uv_point)
-                    distance = face_point.DistanceTo(intersection_center)
-                    
-                    if distance < min_distance:
-                        min_distance = distance
-                        closest_face_ref = face.Reference
-                except:
-                    continue
-    
-    return closest_face_ref
-
-def get_bottom_face_center(solid):
-    """Get the center point of the bottom face of a solid"""
-    if not solid:
-        return None
-    
-    # Get the bounding box to determine Z min
-    bbox = solid.GetBoundingBox()
-    if not bbox:
-        return None
-    
-    min_z = bbox.Min.Z
-    bottom_face = None
-    
-    # Find all faces where Z is approximately equal to min_z
-    tolerance = 0.001  # Small tolerance for floating point comparison
-    for face in solid.Faces:
-        bbox_face = face.GetBoundingBox()
-        if abs(bbox_face.Min.Z - min_z) < tolerance:
-            bottom_face = face
-            break
-    
-    if not bottom_face:
-        # Fallback: find the face with lowest Z coordinate
-        lowest_z = float('inf')
-        for face in solid.Faces:
-            bbox_face = face.GetBoundingBox()
-            if bbox_face.Min.Z < lowest_z:
-                lowest_z = bbox_face.Min.Z
-                bottom_face = face
-    
-    if bottom_face:
-        # Get face centroid by computing bbox center
-        face_bbox = bottom_face.GetBoundingBox()
-        center_pt = XYZ(
-            (face_bbox.Min.X + face_bbox.Max.X) / 2,
-            (face_bbox.Min.Y + face_bbox.Max.Y) / 2,
-            (face_bbox.Min.Z + face_bbox.Max.Z) / 2
-        )
-        return center_pt
-    
-    # If we couldn't find a suitable face, fall back to bbox center at min Z
-    return XYZ(
-        (bbox.Min.X + bbox.Max.X) / 2,
-        (bbox.Min.Y + bbox.Max.Y) / 2,
-        bbox.Min.Z
-    )
-
-def get_structural_face_at_intersection(struct_element, intersection_solid):
-    """Find the face of the structural element that should host the opening"""
-    if not struct_element or not intersection_solid:
-        return None
-    
-    # Get the geometry of the structural element
-    options = Options()
-    options.ComputeReferences = True
-    options.DetailLevel = DB.ViewDetailLevel.Fine
-    
-    struct_geom = struct_element.get_Geometry(options)
-    if not struct_geom:
-        return None
-    
-    # Get the bounding box of the intersection solid to find its center
-    bbox = intersection_solid.GetBoundingBox()
-    if not bbox:
-        return None
-    
-    # Calculate the center of the intersection
-    intersection_center = XYZ(
-        (bbox.Min.X + bbox.Max.X) / 2,
-        (bbox.Min.Y + bbox.Max.Y) / 2,
-        (bbox.Min.Z + bbox.Max.Z) / 2
-    )
-    
-    # Find the closest face on the structural element to the intersection center
-    min_distance = float('inf')
-    closest_face_ref = None
-    
-    for geom_obj in struct_geom:
-        if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
-            for face in geom_obj.Faces:
-                # Try to get closest point on face to intersection center
-                try:
-                    # Get face bounding box center as approximation
-                    face_bbox = face.GetBoundingBox()
-                    face_center = XYZ(
-                        (face_bbox.Min.X + face_bbox.Max.X) / 2,
-                        (face_bbox.Min.Y + face_bbox.Max.Y) / 2,
-                        (face_bbox.Min.Z + face_bbox.Max.Z) / 2
-                    )
-                    
-                    # Calculate distance
-                    distance = face_center.DistanceTo(intersection_center)
-                    
-                    if distance < min_distance:
-                        min_distance = distance
-                        closest_face_ref = face.Reference
-                except Exception:
-                    continue
-    
-    return closest_face_ref
-
-
-def get_solid_dimensions(solid):
-    """Get the width, depth, height of a solid's bounding box."""
-    if not solid:
-        return None, None, None
-    
-    try:
-        bb = solid.GetBoundingBox()
-        min_pt = bb.Min
-        max_pt = bb.Max
-        width = abs(max_pt.X - min_pt.X)
-        depth = abs(max_pt.Y - min_pt.Y)
-        height = abs(max_pt.Z - min_pt.Z)
-        return width, depth, height
-    except:
-        return None, None, None
-
-def create_face_based_family_instance(doc, family_symbol, face_reference, location, diameter=None):
-    """Creates a face-based family instance at the specified location on a face."""
-    try:
-        with Transaction(doc, "Place Opening Family") as trans:
-            trans.Start()
-            
-            # Make sure the family symbol is active
-            if not family_symbol.IsActive:
-                family_symbol.Activate()
-                doc.Regenerate()
-            
-            # Find the parent element
-            host_element = doc.GetElement(face_reference.ElementId)
-            
-            # Create the instance using face-based placement
-            instance = doc.Create.NewFamilyInstance(
-                face_reference,
-                location,
-                XYZ(0, 0, 1),  # Up direction
-                family_symbol
-            )
-                
-            # Set the diameter parameter if needed
-            if diameter:
-                try:
-                    diameter_param = instance.LookupParameter("Diameter")
-                    if diameter_param:
-                        diameter_param.Set(diameter)
-                except Exception as e:
-                    output.print_md("\nWarning: Failed to set diameter parameter: " + str(e))
-                
-            trans.Commit()
-            
-        return instance.Id
-    except Exception as e:
-        output.print_md("\nError creating family instance: " + str(e))
-        return None
-
-def format_length(length_value):
-    """Format a length value to reasonable precision."""
-    if use_unit_type_id:
-        formatted = UnitUtils.ConvertFromInternalUnits(length_value, length_unit)
-    else:
-        formatted = UnitUtils.ConvertFromInternalUnits(length_value, length_unit)
-    return round(formatted, 1)
-
-def get_element_name_id(element):
-    """Returns a string with element name and ID."""
-    if not element:
-        return "None"
-    
-    try:
-        element_id = element.Id.IntegerValue
-        element_name = element.Name
-        category_name = element.Category.Name
-        return "{}: {} (ID: {})".format(category_name, element_name, element_id)
-    except:
+    def AllowReference(self, reference, point):
+        """Check if the referenced element is a structural element"""
         try:
-            return "Element (ID: {})".format(element.Id.IntegerValue)
+            # Get the link instance
+            link_instance = self.doc.GetElement(reference.ElementId)
+            if isinstance(link_instance, RevitLinkInstance):
+                link_doc = link_instance.GetLinkDocument()
+                if link_doc:
+                    # Get the element in the link
+                    element = link_doc.GetElement(reference.LinkedElementId)
+                    if element and element.Category:
+                        # Check if it's a structural category
+                        structural_categories = [
+                            'Structural Framing',
+                            'Structural Columns',
+                            'Structural Foundations',
+                            'Floors',
+                            'Walls',
+                            'Structural Beam Systems',
+                            'Structural Trusses',
+                            'Structural Stiffeners',
+                            'Structural Connections'
+                        ]
+                        if element.Category.Name in structural_categories:
+                            return True
+            return False
         except:
-            return "Unknown Element"
+            return False
 
 
-# Main script execution
-try:
-    output.print_md("# Place Opening at Intersection")
+class MEPLinkedElementFilter(ISelectionFilter):
+    """Selection filter to allow only MEP elements in linked models"""
     
-    # Select the structural element
-    output.print_md("\n## Selecting Structural Element")
-    output.print_md("\nPlease select a structural element (wall, floor, column, beam)...")
+    def __init__(self, linked_doc):
+        self.doc = linked_doc
     
-    try:
-        structural_ref = uidoc.Selection.PickObject(
-            ObjectType.Element, StructuralElementsFilter(), 
-            "Select a structural element (wall, floor, column, beam)"
-        )
-        structural_element = doc.GetElement(structural_ref.ElementId)
-    except Exception as e:
-        if 'canceled' in str(e).lower():
-            raise Exception("Selection canceled")
-        else:
-            raise e
+    def AllowElement(self, element):
+        """Allow selection of RevitLinkInstance"""
+        if isinstance(element, RevitLinkInstance):
+            return True
+        return False
     
-    if structural_element:
-        output.print_md("\n### Selected Structural Element")
-        output.print_md("\n{}".format(get_element_name_id(structural_element)))
-        
-        # Select the MEP element
-        output.print_md("\n## Selecting MEP Element")
-        output.print_md("\nPlease select an MEP element (duct, pipe, conduit, equipment)...")
-        
+    def AllowReference(self, reference, point):
+        """Check if the referenced element is an MEP element"""
         try:
-            mep_ref = uidoc.Selection.PickObject(
-                ObjectType.Element, MEPElementsFilter(), 
-                "Select an MEP element (duct, pipe, conduit, equipment)"
-            )
-            mep_element = doc.GetElement(mep_ref.ElementId)
-        except Exception as e:
-            if 'canceled' in str(e).lower():
-                raise Exception("Selection canceled")
-            else:
-                raise e
+            # Get the link instance
+            link_instance = self.doc.GetElement(reference.ElementId)
+            if isinstance(link_instance, RevitLinkInstance):
+                link_doc = link_instance.GetLinkDocument()
+                if link_doc:
+                    # Get the element in the link
+                    element = link_doc.GetElement(reference.LinkedElementId)
+                    if element and element.Category:
+                        # Check if it's an MEP category
+                        mep_categories = [
+                            'Ducts',
+                            'Duct Fittings',
+                            'Duct Accessories',
+                            'Flex Ducts',
+                            'Pipes',
+                            'Pipe Fittings',
+                            'Pipe Accessories',
+                            'Flex Pipes',
+                            'Mechanical Equipment',
+                            'Electrical Equipment',
+                            'Electrical Fixtures',
+                            'Conduits',
+                            'Conduit Fittings',
+                            'Cable Trays',
+                            'Cable Tray Fittings',
+                            'Lighting Fixtures',
+                            'Air Terminals',
+                            'Sprinklers',
+                            'Plumbing Fixtures'
+                        ]
+                        if element.Category.Name in mep_categories:
+                            return True
+            return False
+        except:
+            return False
+
+
+def get_element_from_link(reference):
+    """Extract the linked element from a reference"""
+    linked_elem = doc.GetElement(reference.ElementId)
+    
+    if isinstance(linked_elem, RevitLinkInstance):
+        link_doc = linked_elem.GetLinkDocument()
+        if link_doc:
+            linked_elem_id = reference.LinkedElementId
+            element_in_link = link_doc.GetElement(linked_elem_id)
+            return element_in_link, link_doc, linked_elem
+    
+    return None, None, None
+
+
+def get_mep_diameter(mep_element):
+    """Get the diameter of an MEP element"""
+    try:
+        diameter = 0.0
         
-        if mep_element:
-            output.print_md("\n### Selected MEP Element")
-            output.print_md("\n{}".format(get_element_name_id(mep_element)))
+        # Try different diameter parameters
+        # For ducts: Width or Height (use the smaller one for round ducts, or width for rectangular)
+        # For pipes and conduits: Diameter parameter
+        
+        if mep_element.Category:
+            cat_name = mep_element.Category.Name
             
-            # Get the geometry of both elements
-            output.print_md("\n## Analyzing Intersection")
+            # For Pipes, Conduits, and Flex Pipes - look for Diameter
+            if cat_name in ['Pipes', 'Pipe Fittings', 'Pipe Accessories', 'Flex Pipes', 
+                           'Conduits', 'Conduit Fittings']:
+                # Try Diameter parameter
+                diameter_param = mep_element.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM)
+                if not diameter_param:
+                    diameter_param = mep_element.get_Parameter(BuiltInParameter.RBS_CONDUIT_DIAMETER_PARAM)
+                
+                if diameter_param:
+                    diameter = diameter_param.AsDouble()
             
-            struct_solids = get_element_geometry(structural_element)
-            mep_solids = get_element_geometry(mep_element)
+            # For Ducts - look for Width/Height
+            elif cat_name in ['Ducts', 'Duct Fittings', 'Duct Accessories', 'Flex Ducts']:
+                width_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+                height_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+                
+                if width_param and height_param:
+                    width = width_param.AsDouble()
+                    height = height_param.AsDouble()
+                    # For round ducts, width and height should be equal
+                    # For rectangular, use the larger dimension as diameter
+                    diameter = max(width, height)
+                elif width_param:
+                    diameter = width_param.AsDouble()
+                elif height_param:
+                    diameter = height_param.AsDouble()
             
-            if struct_solids and mep_solids:
+            # For Cable Trays
+            elif cat_name in ['Cable Trays', 'Cable Tray Fittings']:
+                width_param = mep_element.get_Parameter(BuiltInParameter.RBS_CABLETRAY_WIDTH_PARAM)
+                if width_param:
+                    diameter = width_param.AsDouble()
+        
+        # Return raw diameter (no margin added)
+        return diameter
+        
+    except Exception as e:
+        forms.alert(
+            'Error getting MEP diameter:\n{}\nUsing default value.'.format(str(e)),
+            title='Warning',
+            warn_icon=True
+        )
+        return 0.0
+
+
+def get_structural_depth(struct_element):
+    """Get the depth/width/thickness of a structural element"""
+    try:
+        depth = 0.0
+        found_param_name = "Unknown"
+        
+        if struct_element.Category:
+            cat_name = struct_element.Category.Name
+            
+            # For Structural Framing (beams)
+            if cat_name == 'Structural Framing':
+                # Try to get the depth/height parameter
+                depth_param = struct_element.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
+                if depth_param and depth_param.AsDouble() > 0:
+                    depth = depth_param.AsDouble()
+                    found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (instance)"
+                else:
+                    # Try to get from type
+                    if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                        depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
+                        if depth_param and depth_param.AsDouble() > 0:
+                            depth = depth_param.AsDouble()
+                            found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (type)"
+                
+                # If still not found, try height
+                if depth == 0:
+                    depth_param = struct_element.get_Parameter(BuiltInParameter.INSTANCE_STRUCT_USAGE_TEXT_PARAM)
+                    if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                        depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_HEIGHT)
+                        if depth_param and depth_param.AsDouble() > 0:
+                            depth = depth_param.AsDouble()
+                            found_param_name = "STRUCTURAL_SECTION_COMMON_HEIGHT"
+            
+            # For Structural Columns
+            elif cat_name == 'Structural Columns':
+                # Try to get the width parameter (b dimension)
+                width_param = struct_element.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_WIDTH)
+                if width_param and width_param.AsDouble() > 0:
+                    depth = width_param.AsDouble()
+                    found_param_name = "STRUCTURAL_SECTION_COMMON_WIDTH (instance)"
+                else:
+                    if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                        width_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_WIDTH)
+                        if width_param and width_param.AsDouble() > 0:
+                            depth = width_param.AsDouble()
+                            found_param_name = "STRUCTURAL_SECTION_COMMON_WIDTH (type)"
+                
+                # Try depth if width is 0
+                if depth == 0:
+                    if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                        depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
+                        if depth_param and depth_param.AsDouble() > 0:
+                            depth = depth_param.AsDouble()
+                            found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (type)"
+            
+            # For Structural Foundations
+            elif cat_name == 'Structural Foundations':
+                # Try multiple different parameters that foundations might use
+                
+                # Try STRUCTURAL_FOUNDATION_THICKNESS first
+                thickness_param = struct_element.get_Parameter(BuiltInParameter.STRUCTURAL_FOUNDATION_THICKNESS)
+                if thickness_param and thickness_param.AsDouble() > 0:
+                    depth = thickness_param.AsDouble()
+                    found_param_name = "STRUCTURAL_FOUNDATION_THICKNESS (instance)"
+                
+                # Try from type if not found on instance
+                if depth == 0 and hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                    thickness_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_FOUNDATION_THICKNESS)
+                    if thickness_param and thickness_param.AsDouble() > 0:
+                        depth = thickness_param.AsDouble()
+                        found_param_name = "STRUCTURAL_FOUNDATION_THICKNESS (type)"
+                
+                # Try FLOOR_ATTR_THICKNESS_PARAM (foundations might behave like floors)
+                if depth == 0:
+                    thickness_param = struct_element.get_Parameter(BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM)
+                    if thickness_param and thickness_param.AsDouble() > 0:
+                        depth = thickness_param.AsDouble()
+                        found_param_name = "FLOOR_ATTR_THICKNESS_PARAM (instance)"
+                
+                # Try getting from FoundationType
+                if depth == 0 and hasattr(struct_element, 'FoundationType') and struct_element.FoundationType:
+                    thickness_param = struct_element.FoundationType.get_Parameter(BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM)
+                    if thickness_param and thickness_param.AsDouble() > 0:
+                        depth = thickness_param.AsDouble()
+                        found_param_name = "FLOOR_ATTR_THICKNESS_PARAM (FoundationType)"
+                
+                # Try width/depth as last resort
+                if depth == 0:
+                    width_param = struct_element.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_WIDTH)
+                    if width_param and width_param.AsDouble() > 0:
+                        depth = width_param.AsDouble()
+                        found_param_name = "STRUCTURAL_SECTION_COMMON_WIDTH (instance)"
+                    elif hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                        width_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_WIDTH)
+                        if width_param and width_param.AsDouble() > 0:
+                            depth = width_param.AsDouble()
+                            found_param_name = "STRUCTURAL_SECTION_COMMON_WIDTH (type)"
+                
+                # If still nothing, try looking at ALL parameters by name
+                if depth == 0:
+                    for param in struct_element.Parameters:
+                        param_name = param.Definition.Name.lower()
+                        if 'thickness' in param_name or 'depth' in param_name or 'height' in param_name:
+                            if param.AsDouble() and param.AsDouble() > 0:
+                                depth = param.AsDouble()
+                                found_param_name = "Found by name search: {}".format(param.Definition.Name)
+                                break
+            
+            # For Floors and Walls
+            elif cat_name in ['Floors', 'Walls']:
+                # Get the width/thickness
+                if cat_name == 'Walls':
+                    width_param = struct_element.get_Parameter(BuiltInParameter.WALL_ATTR_WIDTH_PARAM)
+                    if width_param and width_param.AsDouble() > 0:
+                        depth = width_param.AsDouble()
+                        found_param_name = "WALL_ATTR_WIDTH_PARAM (instance)"
+                    elif hasattr(struct_element, 'WallType') and struct_element.WallType:
+                        width_param = struct_element.WallType.get_Parameter(BuiltInParameter.WALL_ATTR_WIDTH_PARAM)
+                        if width_param and width_param.AsDouble() > 0:
+                            depth = width_param.AsDouble()
+                            found_param_name = "WALL_ATTR_WIDTH_PARAM (type)"
+                else:  # Floors
+                    width_param = struct_element.get_Parameter(BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM)
+                    if width_param and width_param.AsDouble() > 0:
+                        depth = width_param.AsDouble()
+                        found_param_name = "FLOOR_ATTR_THICKNESS_PARAM (instance)"
+                    elif hasattr(struct_element, 'FloorType') and struct_element.FloorType:
+                        width_param = struct_element.FloorType.get_Parameter(BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM)
+                        if width_param and width_param.AsDouble() > 0:
+                            depth = width_param.AsDouble()
+                            found_param_name = "FLOOR_ATTR_THICKNESS_PARAM (type)"
+        
+        # Show debug info if depth is still 0
+        debug_info = 'Structural Depth Calculation:\n'
+        debug_info += 'Category: {}\n'.format(cat_name if struct_element.Category else 'None')
+        debug_info += 'Parameter Found: {}\n'.format(found_param_name)
+        debug_info += 'Depth Value: {:.4f} ft ({:.2f} mm)'.format(depth, depth * 304.8)
+        
+        if depth == 0:
+            forms.alert(
+                'WARNING: Structural depth is 0!\n\n' + debug_info + 
+                '\n\nPlease verify the element has dimensional parameters.',
+                title='Structural Depth Warning',
+                warn_icon=True
+            )
+        else:
+            # Show success info for debugging
+            forms.alert(
+                debug_info,
+                title='Structural Depth Found',
+                warn_icon=False
+            )
+        
+        # Return the raw depth (no margin added)
+        return depth
+        
+    except Exception as e:
+        forms.alert(
+            'Error getting structural depth:\n{}\nUsing default value.'.format(str(e)),
+            title='Warning',
+            warn_icon=True
+        )
+        return 0.0
+
+
+def get_mep_direction(mep_element):
+    """Get the direction vector of an MEP element"""
+    try:
+        # For linear MEP elements (pipes, ducts, conduits), get the curve direction
+        if hasattr(mep_element, 'Location'):
+            location = mep_element.Location
+            if location and isinstance(location, LocationCurve):
                 try:
-                    # Get the largest solid for each element
-                    struct_solid = get_largest_solid(struct_solids)
-                    mep_solid = get_largest_solid(mep_solids)
+                    curve = location.Curve
                     
-                    if len(struct_solids) > 1:
-                        output.print_md("\nNote: Multiple solids found in structural element, using the largest one.")
-                    
-                    if len(mep_solids) > 1:
-                        output.print_md("\nNote: Multiple solids found in MEP element, using the largest one.")
-                    
-                    # Try to compute the intersection
-                    try:
-                        # Perform Boolean intersection
-                        result_solid = BooleanOperationsUtils.ExecuteBooleanOperation(
-                            struct_solid, mep_solid, BooleanOperationsType.Intersect
+                    # Get the direction vector at the start of the curve
+                    if hasattr(curve, 'Direction'):
+                        return curve.Direction
+                    else:
+                        # For curves that don't have a Direction property, calculate it
+                        start_point = curve.GetEndPoint(0)
+                        end_point = curve.GetEndPoint(1)
+                        
+                        # Create direction vector
+                        direction = XYZ(
+                            end_point.X - start_point.X,
+                            end_point.Y - start_point.Y,
+                            end_point.Z - start_point.Z
                         )
                         
-                        if result_solid and result_solid.Volume > 0:
-                            # Format the volume for display
-                            if use_unit_type_id:
-                                volume_mm3 = UnitUtils.ConvertFromInternalUnits(
-                                    result_solid.Volume, UnitTypeId.CubicMillimeters
-                                )
-                            else:
-                                volume_mm3 = UnitUtils.ConvertFromInternalUnits(
-                                    result_solid.Volume, DisplayUnitType.DUT_CUBIC_MILLIMETERS
-                                )
-                                
-                            # Display intersection info
-                            output.print_md("\nIntersection volume: {:,.0f} mm³".format(volume_mm3))
-                            
-                            # Find the bottom face center of the intersection
-                            bottom_center = get_bottom_face_center(result_solid)
-                            
-                            if not bottom_center:
-                                output.print_md("\nWarning: Could not determine the base of the intersection solid.")
-                                output.print_md("Falling back to the bounding box center...")
-                                
-                                # Fallback to bounding box center
-                                bbox = result_solid.GetBoundingBox()
-                                bottom_center = XYZ(
-                                    (bbox.Min.X + bbox.Max.X) / 2,
-                                    (bbox.Min.Y + bbox.Max.Y) / 2,
-                                    bbox.Min.Z
-                                )
-                            
-                            # Find the appropriate face of the structural element for hosting
-                            # Find the appropriate face of the structural element for hosting
-                            face_ref = get_structural_face_at_intersection(structural_element, result_solid)
-
-                            if not face_ref:
-                                output.print_md("\nWarning: Could not find a suitable host face on the structural element.")
-                                output.print_md("Will try to place directly using the structural element...")
-                                
-                                # Try to use a reference from the structural element
-                                try:
-                                    # Create a transaction to get a reference
-                                    with Transaction(doc, "Get Reference") as t:
-                                        t.Start()
-                                        ref_list = []
-                                        for face in structural_element.GetGeometryObjectFromReference(structural_ref).Faces:
-                                            ref_list.append(face.Reference)
-                                        if ref_list:
-                                            face_ref = ref_list[0]
-                                        t.RollBack()
-                                except Exception as e:
-                                    output.print_md("\nError getting face reference: " + str(e))
-                                    
-                                # If we still couldn't get a face reference, try to get the user to select one
-                                if not face_ref:
-                                    output.print_md("\nPlease manually select a face on the structural element to place the opening...")
-                                    try:
-                                        selected_face_ref = uidoc.Selection.PickObject(ObjectType.Face, "Select a face on the structural element")
-                                        face_ref = selected_face_ref
-                                    except Exception as e:
-                                        if 'canceled' in str(e).lower():
-                                            output.print_md("\nFace selection canceled by user.")
-                                        else:
-                                            output.print_md("\nError selecting face: " + str(e))
-                            
-                            # Find the "VAL_M_Round Face Opening Solid_RVT2023" family
-                            output.print_md("\n## Placing Opening Family")
-                            
-                            family_symbols = FilteredElementCollector(doc).OfClass(FamilySymbol)
-                            opening_symbol = None
-                            
-                            for symbol in family_symbols:
-                                if "VAL_M_Round Face Opening Solid_RVT2023" in symbol.Family.Name:
-                                    opening_symbol = symbol
-                                    break
-                            
-                            if not opening_symbol:
-                                output.print_md("\n**Error:** Could not find the 'VAL_M_Round Face Opening Solid_RVT2023' family. Please load it into the project.")
-                            else:
-                                # Get the dimensions of the intersection
-                                width, depth, height = get_solid_dimensions(result_solid)
-                                
-                                # Calculate diameter from the intersection dimensions
-                                # Use the maximum of width and depth to ensure the opening covers the MEP element
-                                diameter = max(width, depth, height) * 1.1  # Add 10% safety margin
-                                
-                                # Place the family on the structural face
-                                output.print_md("\nPlacing opening at: X={:.1f} mm, Y={:.1f} mm, Z={:.1f} mm".format(
-                                    format_length(bottom_center.X),
-                                    format_length(bottom_center.Y),
-                                    format_length(bottom_center.Z)
-                                ))
-                                
-                                # Place the family on the face at the intersection position
-                                instance_id = create_face_based_family_instance(
-                                    doc, opening_symbol, face_ref, bottom_center, diameter
-                                )
-                                
-                                if instance_id:
-                                    output.print_md("\n**Success!** Placed opening family on structural face.")
-                                    
-                                    # Try to zoom to the new family
-                                    try:
-                                        id_list = List[ElementId]()
-                                        id_list.Add(instance_id)
-                                        uidoc.Selection.SetElementIds(id_list)
-                                        uidoc.ShowElements(instance_id)
-                                    except Exception as e:
-                                        output.print_md("Could not zoom to new element: " + str(e))
-                                else:
-                                    output.print_md("\n**Failed to place family.**")
-                        else:
-                            output.print_md("\n**No valid intersection** found between the elements.")
-                            
-                            # Use a face selection instead
-                            output.print_md("\nNo intersection found. Please select a face on the structural element to place the opening...")
-                            
+                        # Normalize the vector
+                        length = (direction.X**2 + direction.Y**2 + direction.Z**2)**0.5
+                        if length > 0:
+                            return XYZ(direction.X / length, direction.Y / length, direction.Z / length)
+                except:
+                    pass
+        
+        # For fittings, accessories, and other elements without LocationCurve
+        # Try to get connectors and use the primary connector direction
+        if hasattr(mep_element, 'MEPModel') and mep_element.MEPModel:
+            try:
+                mep_model = mep_element.MEPModel
+                if hasattr(mep_model, 'ConnectorManager') and mep_model.ConnectorManager:
+                    conn_mgr = mep_model.ConnectorManager
+                    if hasattr(conn_mgr, 'Connectors') and conn_mgr.Connectors:
+                        connectors = conn_mgr.Connectors
+                        # Get the first connector's direction
+                        for connector in connectors:
                             try:
-                                face_ref = uidoc.Selection.PickObject(
-                                    ObjectType.Face, 
-                                    "Select a face on the structural element to place the opening"
-                                )
-                                
-                                # Find the location on the selected face
-                                # Use the MEP element's location as basis
-                                location = mep_element.Location
-                                if location:
-                                    location_point = None
-                                    if hasattr(location, 'Point'):
-                                        location_point = location.Point
-                                    elif hasattr(location, 'Curve'):
-                                        curve = location.Curve
-                                        location_point = curve.Evaluate(0.5, True)  # Midpoint
-                                    
-                                    if location_point:
-                                        # Find the MEP diameter
-                                        mep_width, mep_depth, mep_height = get_solid_dimensions(mep_solid)
-                                        diameter = max(mep_width, mep_depth, mep_height) * 1.1
-                                        
-                                        # Find the family
-                                        family_symbols = FilteredElementCollector(doc).OfClass(FamilySymbol)
-                                        opening_symbol = None
-                                        
-                                        for symbol in family_symbols:
-                                            if "VAL_M_Round Face Opening Solid_RVT2023" in symbol.Family.Name:
-                                                opening_symbol = symbol
-                                                break
-                                        
-                                        if opening_symbol:
-                                            # Place the family on the selected face
-                                            instance_id = create_face_based_family_instance(
-                                                doc, opening_symbol, face_ref, location_point, diameter
-                                            )
-                                            
-                                            if instance_id:
-                                                output.print_md("\n**Success!** Placed opening family on selected face.")
-                                                
-                                                # Try to zoom to the new family
-                                                try:
-                                                    id_list = List[ElementId]()
-                                                    id_list.Add(instance_id)
-                                                    uidoc.Selection.SetElementIds(id_list)
-                                                    uidoc.ShowElements(instance_id)
-                                                except Exception as e:
-                                                    output.print_md("Could not zoom to new element: " + str(e))
-                                            else:
-                                                output.print_md("\n**Failed to place family.**")
-                                        else:
-                                            output.print_md("\n**Error:** Could not find the 'VAL_M_Round Face Opening Solid_RVT2023' family.")
-                                    else:
-                                        output.print_md("\n**Could not determine MEP element location.**")
-                                else:
-                                    output.print_md("\n**MEP element has no location.**")
-                            except Exception as e:
-                                if 'canceled' in str(e).lower():
-                                    output.print_md("\n**Face selection canceled by user.**")
-                                else:
-                                    output.print_md("\n**Error selecting face:** " + str(e))
-                                    
-                    except Exception as e:
-                        output.print_md("\n**Error performing boolean operation:** {}".format(str(e)))
-                        output.print_md("\nSome geometry configurations can cause Boolean operations to fail. Simplifying the model, using different elements, or performing a sequence of Boolean operations in an order that avoids such conditions, may solve the problem.")
-                
-                except Exception as e:
-                    output.print_md("\n**Error analyzing intersection:** {}".format(str(e)))
-                    output.print_md("This is likely due to complex geometry or an invalid Boolean operation.")
-            else:
-                output.print_md("\n**Could not extract geometry from one or both elements.**")
-        else:
-            output.print_md("\n**Process canceled. No MEP element was selected.**")
-    else:
-        output.print_md("\n**Process canceled. No structural element was selected.**")
-except Exception as e:
-    if 'Selection canceled' in str(e):
-        output.print_md("\n**Process canceled by user.**")
-    else:
-        output.print_md("\n**Error occurred:** {}".format(str(e)))
+                                if hasattr(connector, 'CoordinateSystem') and connector.CoordinateSystem:
+                                    # Use the Z-axis of the connector (flow direction)
+                                    return connector.CoordinateSystem.BasisZ
+                            except:
+                                continue
+            except:
+                pass
+        
+        # Default to X-axis if can't determine
+        return XYZ(1, 0, 0)
+        
+    except Exception as e:
+        # Default to X-axis on any error
+        return XYZ(1, 0, 0)
 
-output.print_md("\n**Script completed.**")
+
+def is_horizontal_element(struct_element):
+    """Check if structural element is horizontal or vertical based on its orientation"""
+    try:
+        if struct_element.Category:
+            cat_name = struct_element.Category.Name
+            
+            # For Structural Framing (beams) - check the curve direction
+            if cat_name == 'Structural Framing':
+                # Get the location curve
+                if hasattr(struct_element, 'Location') and isinstance(struct_element.Location, LocationCurve):
+                    curve = struct_element.Location.Curve
+                    start_point = curve.GetEndPoint(0)
+                    end_point = curve.GetEndPoint(1)
+                    
+                    # Calculate vertical difference
+                    vertical_diff = abs(end_point.Z - start_point.Z)
+                    # Calculate horizontal difference
+                    horizontal_diff = ((end_point.X - start_point.X)**2 + (end_point.Y - start_point.Y)**2)**0.5
+                    
+                    # If vertical difference is much smaller than horizontal, it's horizontal
+                    # Using a threshold: if vertical change is less than 20% of horizontal change, consider it horizontal
+                    if horizontal_diff > 0:
+                        if vertical_diff / horizontal_diff < 0.2:
+                            return True  # Horizontal
+                        else:
+                            return False  # Vertical or diagonal
+                    else:
+                        # Pure vertical beam
+                        return False
+            
+            # For Structural Columns - always vertical
+            elif cat_name == 'Structural Columns':
+                return False  # Vertical
+            
+            # For Floors - always horizontal
+            elif cat_name == 'Floors':
+                return True  # Horizontal
+            
+            # For Walls - check if wall is vertical or horizontal
+            elif cat_name == 'Walls':
+                # Most walls are vertical, but we can check
+                # For now, assume walls are vertical
+                return False  # Vertical
+        
+        # Default to horizontal if can't determine
+        return True
+        
+    except Exception as e:
+        # Default to horizontal on error
+        return True
+
+
+def is_rectangular_mep(mep_element):
+    """Check if MEP element has rectangular geometry (rectangular ducts)"""
+    try:
+        if mep_element.Category:
+            cat_name = mep_element.Category.Name
+            
+            # For ducts, check if rectangular (width != height)
+            if cat_name in ['Ducts', 'Duct Fittings', 'Duct Accessories', 'Flex Ducts']:
+                width_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+                height_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+                
+                if width_param and height_param:
+                    width = width_param.AsDouble()
+                    height = height_param.AsDouble()
+                    # Check if dimensions are different (within tolerance) - indicates rectangular duct
+                    tolerance = 0.01  # 0.01 feet tolerance
+                    if abs(width - height) >= tolerance:
+                        return True
+        
+        return False
+        
+    except Exception as e:
+        return False
+
+
+def get_mep_width(mep_element):
+    """Get the width of an MEP element"""
+    try:
+        width = 0.0
+        
+        if mep_element.Category:
+            cat_name = mep_element.Category.Name
+            
+            # For Ducts - look for Width
+            if cat_name in ['Ducts', 'Duct Fittings', 'Duct Accessories', 'Flex Ducts']:
+                width_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+                if width_param:
+                    width = width_param.AsDouble()
+            
+            # For Cable Trays
+            elif cat_name in ['Cable Trays', 'Cable Tray Fittings']:
+                width_param = mep_element.get_Parameter(BuiltInParameter.RBS_CABLETRAY_WIDTH_PARAM)
+                if width_param:
+                    width = width_param.AsDouble()
+        
+        return width
+        
+    except Exception as e:
+        return 0.0
+
+
+def get_mep_height(mep_element):
+    """Get the height of an MEP element"""
+    try:
+        height = 0.0
+        
+        if mep_element.Category:
+            cat_name = mep_element.Category.Name
+            
+            # For Ducts - look for Height
+            if cat_name in ['Ducts', 'Duct Fittings', 'Duct Accessories', 'Flex Ducts']:
+                height_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+                if height_param:
+                    height = height_param.AsDouble()
+            
+            # For Cable Trays - use height parameter
+            elif cat_name in ['Cable Trays', 'Cable Tray Fittings']:
+                height_param = mep_element.get_Parameter(BuiltInParameter.RBS_CABLETRAY_HEIGHT_PARAM)
+                if height_param:
+                    height = height_param.AsDouble()
+        
+        return height
+        
+    except Exception as e:
+        return 0.0
+
+
+def is_cylindrical_mep(mep_element):
+    """Check if MEP element has cylindrical geometry (pipes, round ducts, conduits)"""
+    try:
+        if mep_element.Category:
+            cat_name = mep_element.Category.Name
+            
+            # Pipes and conduits are always cylindrical
+            if cat_name in ['Pipes', 'Pipe Fittings', 'Pipe Accessories', 'Flex Pipes', 
+                           'Conduits', 'Conduit Fittings']:
+                return True
+            
+            # For ducts, check if round (width == height)
+            elif cat_name in ['Ducts', 'Duct Fittings', 'Duct Accessories', 'Flex Ducts']:
+                width_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_WIDTH_PARAM)
+                height_param = mep_element.get_Parameter(BuiltInParameter.RBS_CURVE_HEIGHT_PARAM)
+                
+                if width_param and height_param:
+                    width = width_param.AsDouble()
+                    height = height_param.AsDouble()
+                    # Check if dimensions are equal (within tolerance) - indicates round duct
+                    tolerance = 0.01  # 0.01 feet tolerance
+                    if abs(width - height) < tolerance:
+                        return True
+        
+        return False
+        
+    except Exception as e:
+        return False
+
+
+def place_family_at_point(point, mep_diameter, structural_depth, mep_element, struct_element):
+    """Place a family instance at the specified point with custom parameters"""
+    try:
+        # Check if MEP is cylindrical or rectangular
+        is_cylindrical = is_cylindrical_mep(mep_element)
+        is_rectangular = is_rectangular_mep(mep_element)
+        is_horizontal = is_horizontal_element(struct_element)
+        
+        # Determine which family to place based on MEP geometry and structural orientation
+        if is_rectangular:
+            if is_horizontal:
+                bes_resa_type_name = "BES_RESA RECT HORIZONTAL"
+            else:
+                bes_resa_type_name = "BES_RESA RECT VERTICAL"
+            use_rectangular_params = True
+        elif is_cylindrical:
+            if is_horizontal:
+                bes_resa_type_name = "BES_RESA CIRC HORIZONTAL"
+            else:
+                bes_resa_type_name = "BES_RESA CIRC VERTICAL"
+            use_rectangular_params = False
+        else:
+            # Ask user to select family for other cases
+            use_rectangular_params = False
+            bes_resa_type_name = None
+        
+        if bes_resa_type_name:
+            # Automatically use BES_RESA family
+            collector = FilteredElementCollector(doc)
+            family_symbols = collector.OfClass(FamilySymbol).ToElements()
+            
+            selected_symbol = None
+            for symbol in family_symbols:
+                if symbol.Family:
+                    family_name = symbol.Family.Name
+                    # Get the type name
+                    type_name_param = symbol.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)
+                    if type_name_param:
+                        type_name = type_name_param.AsString()
+                        # Create full name: Family Name + Type Name
+                        full_name = "{} {}".format(family_name, type_name)
+                        
+                        # Check if it matches what we're looking for
+                        if full_name == bes_resa_type_name or type_name == bes_resa_type_name:
+                            selected_symbol = symbol
+                            break
+            
+            if not selected_symbol:
+                forms.alert(
+                    '{} type not found in the project.\n'.format(bes_resa_type_name) +
+                    'Please load the BES_RESA family with this type.',
+                    title='Error',
+                    warn_icon=True
+                )
+                return None
+        else:
+            # Not cylindrical - ask user to select family
+            collector = FilteredElementCollector(doc)
+            family_symbols = collector.OfClass(FamilySymbol).ToElements()
+            
+            if not family_symbols:
+                forms.alert(
+                    'No family symbols found in the project. Please load a family first.',
+                    title='Error',
+                    warn_icon=True
+                )
+                return None
+            
+            # Create a dictionary of family symbols for selection
+            family_dict = {}
+            for symbol in family_symbols:
+                if symbol.Family:
+                    family_name = symbol.Family.Name
+                    symbol_name = symbol.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
+                    display_name = "{}: {}".format(family_name, symbol_name)
+                    family_dict[display_name] = symbol
+            
+            # Let user select a family symbol
+            selected_family_name = forms.SelectFromList.show(
+                sorted(family_dict.keys()),
+                title='Select Family Type to Place',
+                width=500,
+                height=600,
+                button_name='Select'
+            )
+            
+            if not selected_family_name:
+                # forms.alert('No family selected. Placement cancelled.', title='Cancelled', warn_icon=False)
+                return None
+            
+            selected_symbol = family_dict[selected_family_name]
+        
+        # Start a transaction
+        t = Transaction(doc, "Place Family at Intersection")
+        t.Start()
+        
+        try:
+            # Activate the symbol if it's not already active
+            if not selected_symbol.IsActive:
+                selected_symbol.Activate()
+                doc.Regenerate()
+            
+            # Create the family instance at the intersection point
+            new_instance = doc.Create.NewFamilyInstance(
+                point,
+                selected_symbol,
+                Structure.StructuralType.NonStructural
+            )
+            
+            # Try to rotate the instance to align with MEP direction
+            # Skip rotation for fittings and accessories as they may not have proper direction info
+            try:
+                if mep_element.Category:
+                    cat_name = mep_element.Category.Name
+                    # Rotate for both cylindrical and rectangular linear elements (not fittings or accessories)
+                    if cat_name in ['Pipes', 'Ducts', 'Conduits', 'Cable Trays', 'Flex Pipes', 'Flex Ducts']:
+                        # Get MEP direction vector
+                        mep_direction = get_mep_direction(mep_element)
+                        
+                        # Project to XY plane (horizontal direction)
+                        mep_direction_xy = XYZ(mep_direction.X, mep_direction.Y, 0)
+                        length_xy = (mep_direction_xy.X**2 + mep_direction_xy.Y**2)**0.5
+                        
+                        if length_xy > 0.001:
+                            # Normalize
+                            mep_direction_xy = XYZ(mep_direction_xy.X / length_xy, mep_direction_xy.Y / length_xy, 0)
+                            
+                            # Calculate rotation angle from X-axis
+                            angle = math.atan2(mep_direction_xy.Y, mep_direction_xy.X)
+                            
+                            # Create rotation axis (Z-axis through the point)
+                            rotation_axis = Line.CreateBound(point, XYZ(point.X, point.Y, point.Z + 10))
+                            
+                            # Rotate the instance to align with MEP direction
+                            # This works for both cylindrical and rectangular MEP
+                            ElementTransformUtils.RotateElement(doc, new_instance.Id, rotation_axis, angle)
+            except Exception as rotation_error:
+                # If rotation fails, just continue without rotation
+                # The family will be placed but not rotated
+                pass
+            
+            # Set parameters based on MEP type
+            param_warnings = []
+            
+            if use_rectangular_params:
+                # For rectangular MEP - set width, height, and depth
+                
+                # Get MEP width and height
+                mep_width = get_mep_width(mep_element)
+                mep_height = get_mep_height(mep_element)
+                
+                # Set the width parameter (BES_RESA Largeur)
+                width_param = new_instance.LookupParameter("BES_RESA Largeur")
+                if width_param and not width_param.IsReadOnly:
+                    width_param.Set(mep_width)
+                else:
+                    # Try without space
+                    width_param = new_instance.LookupParameter("BES_RESA_Largeur")
+                    if width_param and not width_param.IsReadOnly:
+                        width_param.Set(mep_width)
+                
+                if not width_param or width_param.IsReadOnly:
+                    param_warnings.append('Could not find or set "BES_RESA Largeur" parameter.')
+                
+                # Set the height parameter (BES_RESA Hauteur)
+                height_param = new_instance.LookupParameter("BES_RESA Hauteur")
+                if height_param and not height_param.IsReadOnly:
+                    height_param.Set(mep_height)
+                else:
+                    # Try without space
+                    height_param = new_instance.LookupParameter("BES_RESA_Hauteur")
+                    if height_param and not height_param.IsReadOnly:
+                        height_param.Set(mep_height)
+                
+                if not height_param or height_param.IsReadOnly:
+                    param_warnings.append('Could not find or set "BES_RESA Hauteur" parameter.')
+                
+                # Set the depth parameter (BES_RESA Profondeur) - structural thickness + 55mm
+                depth_param = new_instance.LookupParameter("BES_RESA Profondeur")
+                if depth_param and not depth_param.IsReadOnly:
+                    depth_param.Set(structural_depth)
+                else:
+                    # Try without space
+                    depth_param = new_instance.LookupParameter("BES_RESA_Profondeur")
+                    if depth_param and not depth_param.IsReadOnly:
+                        depth_param.Set(structural_depth)
+                
+                if not depth_param or depth_param.IsReadOnly:
+                    param_warnings.append('Could not find or set "BES_RESA Profondeur" parameter.')
+            else:
+                # For cylindrical MEP - set diameter and depth
+                
+                # Set the diameter parameter (BES_RESA Diameter)
+                diameter_param = new_instance.LookupParameter("BES_RESA Diameter")
+                if diameter_param and not diameter_param.IsReadOnly:
+                    diameter_param.Set(mep_diameter)
+                else:
+                    # Try without space
+                    diameter_param = new_instance.LookupParameter("BES_RESA_Diameter")
+                    if diameter_param and not diameter_param.IsReadOnly:
+                        diameter_param.Set(mep_diameter)
+                
+                if not diameter_param or diameter_param.IsReadOnly:
+                    param_warnings.append('Could not find or set "BES_RESA Diameter" parameter.')
+                
+                # Set the depth parameter (BES_RESA Profondeur)
+                depth_param = new_instance.LookupParameter("BES_RESA Profondeur")
+                if depth_param and not depth_param.IsReadOnly:
+                    depth_param.Set(structural_depth)
+                else:
+                    # Try without space
+                    depth_param = new_instance.LookupParameter("BES_RESA_Profondeur")
+                    if depth_param and not depth_param.IsReadOnly:
+                        depth_param.Set(structural_depth)
+                
+                if not depth_param or depth_param.IsReadOnly:
+                    param_warnings.append('Could not find or set "BES_RESA Profondeur" parameter.')
+            
+            # Check if parameters were set successfully
+            # param_warnings list is already populated above
+            
+            # Commit the transaction
+            t.Commit()
+            
+            # Show warnings after commit if any
+            # if param_warnings:
+            #     forms.alert(
+            #         'Warning:\n' + '\n'.join(param_warnings) + 
+            #         '\n\nMake sure the family has these parameters.',
+            #         title='Parameter Warning',
+            #         warn_icon=True
+            #     )
+            
+            # forms.alert(
+            #     'Family instance placed successfully!\n\n' +
+            #     'Family: {}\n'.format(selected_symbol.Family.Name) +
+            #     'Type: {}\n'.format(selected_symbol.Name) +
+            #     'Location: ({:.4f}, {:.4f}, {:.4f})\n\n'.format(point.X, point.Y, point.Z) +
+            #     'BES_RESA Diameter: {:.4f} ft ({:.2f} mm)\n'.format(mep_diameter, mep_diameter * 304.8) +
+            #     'BES_RESA Profondeur: {:.4f} ft ({:.2f} mm)'.format(structural_depth, structural_depth * 304.8),
+            #     title='Success',
+            #     warn_icon=False
+            # )
+            
+            # Select the newly placed instance (after commit)
+            from System.Collections.Generic import List
+            element_ids = List[ElementId]()
+            element_ids.Add(new_instance.Id)
+            uidoc.Selection.SetElementIds(element_ids)
+            
+            return new_instance
+            
+        except Exception as e:
+            t.RollBack()
+            forms.alert(
+                'Error placing family instance:\n{}\n\n'.format(str(e)) +
+                'Make sure the selected family can be placed as a point-based instance.',
+                title='Error',
+                warn_icon=True
+            )
+            return None
+            
+    except Exception as e:
+        forms.alert(
+            'Error in place_family_at_point:\n{}'.format(str(e)),
+            title='Error',
+            warn_icon=True
+        )
+        return None
+
+
+def check_geometry_intersection(struct_element, struct_link_instance, mep_element, mep_link_instance, structural_ref, mep_reference):
+    """Check if two elements' geometries intersect and find intersection points"""
+    try:
+        # Get geometry options
+        options = Options()
+        options.ComputeReferences = True
+        options.DetailLevel = ViewDetailLevel.Fine
+        options.IncludeNonVisibleObjects = False
+        
+        # Get the transforms for both link instances
+        struct_transform = struct_link_instance.GetTotalTransform()
+        mep_transform = mep_link_instance.GetTotalTransform()
+        
+        # Get geometry for structural element
+        struct_geometry = struct_element.get_Geometry(options)
+        if not struct_geometry:
+            forms.alert('Could not retrieve geometry for structural element.', title='Error', warn_icon=True)
+            return False
+        
+        # Get geometry for MEP element
+        mep_geometry = mep_element.get_Geometry(options)
+        if not mep_geometry:
+            forms.alert('Could not retrieve geometry for MEP element.', title='Error', warn_icon=True)
+            return False
+        
+        # Collect all solids from structural element
+        struct_solids = []
+        for geom_obj in struct_geometry:
+            if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
+                # Transform the solid to the current document coordinate system
+                transformed_solid = SolidUtils.CreateTransformed(geom_obj, struct_transform)
+                struct_solids.append(transformed_solid)
+            elif isinstance(geom_obj, GeometryInstance):
+                inst_geom = geom_obj.GetInstanceGeometry()
+                for inst_obj in inst_geom:
+                    if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
+                        transformed_solid = SolidUtils.CreateTransformed(inst_obj, struct_transform)
+                        struct_solids.append(transformed_solid)
+        
+        # Collect all solids from MEP element
+        mep_solids = []
+        for geom_obj in mep_geometry:
+            if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
+                # Transform the solid to the current document coordinate system
+                transformed_solid = SolidUtils.CreateTransformed(geom_obj, mep_transform)
+                mep_solids.append(transformed_solid)
+            elif isinstance(geom_obj, GeometryInstance):
+                inst_geom = geom_obj.GetInstanceGeometry()
+                for inst_obj in inst_geom:
+                    if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
+                        transformed_solid = SolidUtils.CreateTransformed(inst_obj, mep_transform)
+                        mep_solids.append(transformed_solid)
+        
+        if not struct_solids:
+            forms.alert('No valid solids found in structural element.', title='Warning', warn_icon=True)
+            return False
+        
+        if not mep_solids:
+            forms.alert('No valid solids found in MEP element.', title='Warning', warn_icon=True)
+            return False
+        
+        # Check for intersections
+        intersection_results = []
+        intersection_found = False
+        
+        for i, struct_solid in enumerate(struct_solids):
+            for j, mep_solid in enumerate(mep_solids):
+                try:
+                    # Perform boolean intersection
+                    intersection_solid = BooleanOperationsUtils.ExecuteBooleanOperation(
+                        struct_solid, 
+                        mep_solid, 
+                        BooleanOperationsType.Intersect
+                    )
+                    
+                    if intersection_solid and intersection_solid.Volume > 0.0001:  # Small threshold for floating point
+                        intersection_found = True
+                        
+                        # Get centroid of intersection as the intersection point
+                        centroid = intersection_solid.ComputeCentroid()
+                        
+                        # Get the bounding box to find min/max points
+                        bbox = intersection_solid.GetBoundingBox()
+                        
+                        intersection_results.append({
+                            'volume': intersection_solid.Volume,
+                            'centroid': centroid,
+                            'bbox_min': bbox.Min,
+                            'bbox_max': bbox.Max
+                        })
+                        
+                except Exception as e:
+                    # Some geometry operations might fail, continue checking others
+                    continue
+        
+        # Display results
+        if intersection_found:
+            result_text = []
+            result_text.append("=== INTERSECTION DETECTED ===\n")
+            result_text.append("The geometries INTERSECT!\n")
+            result_text.append("Number of intersections found: {}\n".format(len(intersection_results)))
+            
+            for idx, result in enumerate(intersection_results):
+                result_text.append("\n--- Intersection {} ---".format(idx + 1))
+                result_text.append("Intersection Volume: {:.4f} cubic feet".format(result['volume']))
+                result_text.append("\nIntersection Point (Centroid):")
+                result_text.append("  X: {:.4f} ft".format(result['centroid'].X))
+                result_text.append("  Y: {:.4f} ft".format(result['centroid'].Y))
+                result_text.append("  Z: {:.4f} ft".format(result['centroid'].Z))
+                result_text.append("\nBounding Box:")
+                result_text.append("  Min: ({:.4f}, {:.4f}, {:.4f})".format(
+                    result['bbox_min'].X, result['bbox_min'].Y, result['bbox_min'].Z
+                ))
+                result_text.append("  Max: ({:.4f}, {:.4f}, {:.4f})".format(
+                    result['bbox_max'].X, result['bbox_max'].Y, result['bbox_max'].Z
+                ))
+            
+            # forms.alert(
+            #     '\n'.join(result_text),
+            #     title='Intersection Results',
+            #     warn_icon=False
+            # )
+            
+            # Ask user if they want to place a family at the intersection point
+            if forms.alert(
+                'Do you want to place a family instance at the intersection point?',
+                title='Place Family',
+                yes=True,
+                no=True
+            ):
+                # Get the first intersection point (centroid)
+                intersection_point = intersection_results[0]['centroid']
+                
+                # Get MEP diameter + 30mm
+                mep_diameter = get_mep_diameter(mep_element)
+                
+                # Get structural depth (no margin)
+                structural_depth = get_structural_depth(struct_element)
+                
+                # Show calculated values for debugging
+                # forms.alert(
+                #     'Calculated Parameters:\n\n' +
+                #     'MEP Diameter + 30mm: {:.4f} ft ({:.2f} mm)\n'.format(mep_diameter, mep_diameter * 304.8) +
+                #     'Structural Depth: {:.4f} ft ({:.2f} mm)\n\n'.format(structural_depth, structural_depth * 304.8) +
+                #     'These values will be set to:\n' +
+                #     '- BES_RESA Diameter\n' +
+                #     '- BES_RESA Profondeur',
+                #     title='Parameter Values',
+                #     warn_icon=False
+                # )
+                
+                # Place family at intersection point with parameters
+                place_family_at_point(intersection_point, mep_diameter, structural_depth, mep_element, struct_element)
+            
+            # Highlight both elements
+            uidoc.Selection.SetReferences([structural_ref, mep_reference])
+            
+        else:
+            # forms.alert(
+            #     '=== NO INTERSECTION ===\n\nThe geometries DO NOT intersect.',
+            #     title='Intersection Results',
+            #     warn_icon=False
+            # )
+            pass
+        
+        return intersection_found
+        
+    except Exception as e:
+        forms.alert(
+            'Error during geometry intersection check:\n{}'.format(str(e)),
+            title='Error',
+            warn_icon=True
+        )
+        return False
+
+
+def main():
+    try:
+        # STEP 1: Select a structural element in a linked model
+        forms.alert(
+            'STEP 1: Select a STRUCTURAL element inside a linked model.',
+            title='Select Structural Element in Link',
+            warn_icon=False
+        )
+        
+        # Create structural selection filter for linked elements
+        structural_filter = StructuralLinkedElementFilter(doc)
+        
+        structural_ref = uidoc.Selection.PickObject(
+            ObjectType.LinkedElement,
+            structural_filter,
+            "Select a structural element (beam, column, wall, floor, etc.) in a linked model"
+        )
+        
+        # Get the structural element from the link
+        structural_element, structural_link_doc, structural_link_instance = get_element_from_link(structural_ref)
+        
+        if not structural_element or not structural_link_doc:
+            forms.alert('Could not retrieve structural element from linked model.', title='Error', warn_icon=True)
+            return
+        
+        # Verify it's a structural element
+        is_structural = False
+        if structural_element.Category:
+            structural_categories = [
+                'Structural Framing', 'Structural Columns', 'Structural Foundations',
+                'Floors', 'Walls', 'Structural Beam Systems', 'Structural Trusses',
+                'Structural Stiffeners', 'Structural Connections'
+            ]
+            is_structural = structural_element.Category.Name in structural_categories
+        
+        if not is_structural:
+            forms.alert(
+                'The selected element is not a structural element.\n' +
+                'Category: {}\n\n'.format(structural_element.Category.Name if structural_element.Category else 'None') +
+                'Please select a structural element (beam, column, wall, floor, etc.)',
+                title='Invalid Selection',
+                warn_icon=True
+            )
+            return
+        
+        # Store information about the structural element
+        structural_info = []
+        structural_info.append("=== STRUCTURAL ELEMENT (STORED) ===\n")
+        structural_info.append("Link Name: {}".format(structural_link_instance.Name))
+        structural_info.append("Link Document: {}".format(structural_link_doc.Title))
+        structural_info.append("Element ID: {}".format(structural_element.Id))
+        structural_info.append("Category: {}".format(
+            structural_element.Category.Name if structural_element.Category else "None"
+        ))
+        
+        if hasattr(structural_element, 'Symbol') and structural_element.Symbol:
+            structural_info.append("Family: {}".format(structural_element.Symbol.Family.Name))
+            structural_info.append("Type: {}".format(structural_element.Symbol.Name))
+        
+        # forms.alert(
+        #     '\n'.join(structural_info) + '\n\nStructural element stored successfully!',
+        #     title='Structural Element Selected',
+        #     warn_icon=False
+        # )
+        
+        # STEP 2: Select an MEP element in a linked model
+        forms.alert(
+            'STEP 2: Now select an MEP element inside a linked model.',
+            title='Select MEP Element in Link',
+            warn_icon=False
+        )
+        
+        # Create MEP selection filter for linked elements
+        mep_filter = MEPLinkedElementFilter(doc)
+        
+        # Pick object with MEP filter
+        mep_reference = uidoc.Selection.PickObject(
+            ObjectType.LinkedElement,
+            mep_filter,
+            "Select an MEP element (duct, pipe, conduit, etc.) in a linked model"
+        )
+        
+        if mep_reference:
+            # Get the element from the link
+            mep_element, link_doc, link_instance = get_element_from_link(mep_reference)
+            
+            if mep_element and link_doc:
+                # Verify it's an MEP element
+                is_mep = False
+                if mep_element.Category:
+                    mep_categories = [
+                        'Ducts', 'Duct Fittings', 'Duct Accessories', 'Flex Ducts',
+                        'Pipes', 'Pipe Fittings', 'Pipe Accessories', 'Flex Pipes',
+                        'Mechanical Equipment', 'Electrical Equipment', 'Electrical Fixtures',
+                        'Conduits', 'Conduit Fittings', 'Cable Trays', 'Cable Tray Fittings',
+                        'Lighting Fixtures', 'Air Terminals', 'Sprinklers', 'Plumbing Fixtures'
+                    ]
+                    is_mep = mep_element.Category.Name in mep_categories
+                
+                if not is_mep:
+                    forms.alert(
+                        'The selected element is not an MEP element.\n' +
+                        'Category: {}\n\n'.format(mep_element.Category.Name if mep_element.Category else 'None') +
+                        'Please select an MEP element (duct, pipe, conduit, mechanical equipment, etc.)',
+                        title='Invalid Selection',
+                        warn_icon=True
+                    )
+                    return
+                
+                # Display information about both elements
+                info = []
+                info.append("=== SELECTION SUMMARY ===\n")
+                
+                # Structural element info
+                info.append("STRUCTURAL ELEMENT (IN LINK):")
+                info.append("  Link Name: {}".format(structural_link_instance.Name))
+                info.append("  Link Document: {}".format(structural_link_doc.Title))
+                info.append("  Element ID: {}".format(structural_element.Id))
+                info.append("  Category: {}".format(
+                    structural_element.Category.Name if structural_element.Category else "None"
+                ))
+                
+                if hasattr(structural_element, 'Symbol') and structural_element.Symbol:
+                    info.append("  Family: {}".format(structural_element.Symbol.Family.Name))
+                    info.append("  Type: {}".format(structural_element.Symbol.Name))
+                
+                # MEP element info
+                info.append("\nMEP ELEMENT (IN LINK):")
+                info.append("  Link Name: {}".format(link_instance.Name))
+                info.append("  Link Document: {}".format(link_doc.Title))
+                info.append("  Element ID: {}".format(mep_element.Id))
+                info.append("  Category: {}".format(
+                    mep_element.Category.Name if mep_element.Category else "None"
+                ))
+                info.append("  Type: {}".format(mep_element.GetType().Name))
+                
+                # Get family and type name if applicable
+                if hasattr(mep_element, 'Symbol') and mep_element.Symbol:
+                    info.append("  Family: {}".format(mep_element.Symbol.Family.Name))
+                    info.append("  Type: {}".format(mep_element.Symbol.Name))
+                elif hasattr(mep_element, 'Name'):
+                    info.append("  Name: {}".format(mep_element.Name))
+                
+                # Show the information
+                # forms.alert(
+                #     '\n'.join(info),
+                #     title='Both Elements Selected',
+                #     warn_icon=False
+                # )
+                
+                # Check for geometry intersection
+                # forms.alert(
+                #     'Checking for geometry intersection...',
+                #     title='Analyzing Geometry',
+                #     warn_icon=False
+                # )
+                
+                intersection_found = check_geometry_intersection(
+                    structural_element, 
+                    structural_link_instance,
+                    mep_element, 
+                    link_instance,
+                    structural_ref,
+                    mep_reference
+                )
+                
+            else:
+                forms.alert(
+                    'Could not retrieve MEP element from linked model.',
+                    title='Error',
+                    warn_icon=True
+                )
+    
+    except Exception as e:
+        if 'cancel' not in str(e).lower():
+            forms.alert(
+                'Error: {}'.format(str(e)),
+                title='Error',
+                warn_icon=True
+            )
+
+
+if __name__ == '__main__':
+    main()
