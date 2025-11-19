@@ -42,11 +42,9 @@ def get_survey_point_position():
                 survey_point = bp.Position
                 return survey_point.Z
         
-        print("Warning: Survey Point not found, using 0.0 as Z coordinate")
         return 0.0
         
     except Exception as e:
-        print("Error getting Survey Point position: {}".format(str(e)))
         return 0.0
 
 
@@ -67,7 +65,6 @@ def get_bottom_elevation(element, survey_z):
         geom_elem = element.get_Geometry(options)
         
         if geom_elem is None:
-            print("No geometry found for element ID: {}".format(element.Id))
             return None
         
         min_z = None
@@ -96,8 +93,6 @@ def get_bottom_elevation(element, survey_z):
             return None
             
     except Exception as e:
-        print("Error getting geometry for element {}: {}".format(
-            element.Id, str(e)))
         return None
 
 
@@ -123,8 +118,6 @@ def get_center_point(element):
         return None
         
     except Exception as e:
-        print("Error getting center point for element {}: {}".format(
-            element.Id, str(e)))
         return None
 
 
@@ -200,11 +193,17 @@ def main():
         forms.alert("No generic models found with 'RESA' or 'Opening' "
                    "in their type name.", exitscript=True)
     
-    print("Found {} elements to process".format(len(filtered_elements)))
-    
     # Get Survey Point Z coordinate
     survey_z = get_survey_point_position()
-    print("Survey Point Z coordinate: {} m".format(survey_z))
+    
+    # Collect existing numbers to avoid duplicates
+    existing_numbers = set()
+    for elem in filtered_elements:
+        ope_number_param = elem.LookupParameter("OPE_NUMBER")
+        if ope_number_param is not None and ope_number_param.HasValue:
+            existing_num = ope_number_param.AsInteger()
+            if existing_num != 0:
+                existing_numbers.add(existing_num)
     
     # Calculate center points and create sorting data
     element_data = []
@@ -221,13 +220,9 @@ def main():
                 'y': y,
                 'distance': distance
             })
-        else:
-            print("Could not get center point for element ID: {}".format(elem.Id))
     
     # Sort by distance from bigger to smaller
     element_data.sort(key=lambda item: item['distance'], reverse=True)
-    
-    print("Elements sorted by distance from origin (biggest to smallest)")
     
     # Process elements
     success_count = 0
@@ -242,8 +237,10 @@ def main():
     t.Start()
     
     try:
-        # Assign numbers sequentially
-        for index, item in enumerate(element_data, start=1):
+        # Find next available number starting from 1
+        next_number = 1
+        
+        for item in element_data:
             elem = item['element']
             
             # Handle OPE_NUMBER parameter
@@ -251,34 +248,28 @@ def main():
             if ope_number_param is not None:
                 # Check if already has a number
                 if ope_number_param.HasValue and ope_number_param.AsInteger() != 0:
-                    existing_num = ope_number_param.AsInteger()
-                    print("Element ID {} already has OPE_NUMBER: {} - skipping".format(
-                        elem.Id, existing_num))
                     already_numbered_count += 1
                 else:
+                    # Find next available unique number
+                    while next_number in existing_numbers:
+                        next_number += 1
+                    
                     # Assign new number
                     if not ope_number_param.IsReadOnly:
                         try:
-                            ope_number_param.Set(index)
+                            ope_number_param.Set(next_number)
+                            existing_numbers.add(next_number)
                             numbering_success_count += 1
-                            print("Assigned OPE_NUMBER {} to element ID {} (X:{:.2f}, Y:{:.2f})".format(
-                                index, elem.Id, item['x'], item['y']))
+                            next_number += 1
                         except Exception as e:
-                            print("Error setting OPE_NUMBER for element {}: {}".format(
-                                elem.Id, str(e)))
-                    else:
-                        print("OPE_NUMBER parameter is read-only for element ID: {}".format(elem.Id))
+                            pass
             else:
-                print("Element ID {} does not have 'OPE_NUMBER' parameter".format(elem.Id))
                 numbering_no_param_count += 1
             
             # Handle OPE_ABSOLUTE LEVEL parameter
-            # Get bottom elevation relative to Survey Point Z coordinate
             bottom_elev = get_bottom_elevation(elem, survey_z)
             
             if bottom_elev is None:
-                print("Could not get elevation for element ID: {}".format(
-                    elem.Id))
                 error_count += 1
                 continue
             
@@ -286,8 +277,6 @@ def main():
             param = elem.LookupParameter("OPE_ABSOLUTE LEVEL")
             
             if param is None:
-                print("Element ID {} does not have 'OPE_ABSOLUTE LEVEL' "
-                     "parameter".format(elem.Id))
                 no_param_count += 1
                 continue
             
@@ -296,12 +285,8 @@ def main():
                     param.Set(bottom_elev)
                     success_count += 1
                 except Exception as e:
-                    print("Error setting parameter for element {}: {}".format(
-                        elem.Id, str(e)))
                     error_count += 1
             else:
-                print("Parameter is read-only for element ID: {}".format(
-                    elem.Id))
                 error_count += 1
         
         t.Commit()
@@ -312,20 +297,6 @@ def main():
         sys.exit()
     
     # Report results
-    print("\n" + "="*50)
-    print("RESULTS:")
-    print("="*50)
-    print("Total elements found: {}".format(len(filtered_elements)))
-    print("\nOPE_ABSOLUTE LEVEL:")
-    print("  Successfully updated: {}".format(success_count))
-    print("  Missing parameter: {}".format(no_param_count))
-    print("  Errors: {}".format(error_count))
-    print("\nOPE_NUMBER:")
-    print("  Successfully numbered: {}".format(numbering_success_count))
-    print("  Already numbered (skipped): {}".format(already_numbered_count))
-    print("  Missing parameter: {}".format(numbering_no_param_count))
-    print("="*50)
-    
     message = "Process completed!\n\n"
     message += "OPE_ABSOLUTE LEVEL: {} updated\n".format(success_count)
     message += "OPE_NUMBER: {} newly assigned, {} already numbered".format(
@@ -333,7 +304,6 @@ def main():
     
     if no_param_count > 0 or numbering_no_param_count > 0:
         message += "\n\nWarning: Some elements are missing parameters."
-        message += "\nCheck the output window for details."
         forms.alert(message, warn_icon=True)
     else:
         forms.alert(message)

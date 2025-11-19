@@ -201,6 +201,7 @@ def get_structural_depth(struct_element):
     try:
         depth = 0.0
         found_param_name = "Unknown"
+        cat_name = "Unknown"
         
         if struct_element.Category:
             cat_name = struct_element.Category.Name
@@ -329,25 +330,25 @@ def get_structural_depth(struct_element):
                             found_param_name = "FLOOR_ATTR_THICKNESS_PARAM (type)"
         
         # Show debug info if depth is still 0
-        debug_info = 'Structural Depth Calculation:\n'
-        debug_info += 'Category: {}\n'.format(cat_name if struct_element.Category else 'None')
-        debug_info += 'Parameter Found: {}\n'.format(found_param_name)
-        debug_info += 'Depth Value: {:.4f} ft ({:.2f} mm)'.format(depth, depth * 304.8)
+        # debug_info = 'Structural Depth Calculation:\n'
+        # debug_info += 'Category: {}\n'.format(cat_name if struct_element.Category else 'None')
+        # debug_info += 'Parameter Found: {}\n'.format(found_param_name)
+        # debug_info += 'Depth Value: {:.4f} ft ({:.2f} mm)'.format(depth, depth * 304.8)
         
-        if depth == 0:
-            forms.alert(
-                'WARNING: Structural depth is 0!\n\n' + debug_info + 
-                '\n\nPlease verify the element has dimensional parameters.',
-                title='Structural Depth Warning',
-                warn_icon=True
-            )
-        else:
-            # Show success info for debugging
-            forms.alert(
-                debug_info,
-                title='Structural Depth Found',
-                warn_icon=False
-            )
+        # if depth == 0:
+        #     forms.alert(
+        #         'WARNING: Structural depth is 0!\n\n' + debug_info + 
+        #         '\n\nPlease verify the element has dimensional parameters.',
+        #         title='Structural Depth Warning',
+        #         warn_icon=True
+        #     )
+        # else:
+        #     # Show success info for debugging
+        #     forms.alert(
+        #         debug_info,
+        #         title='Structural Depth Found',
+        #         warn_icon=False
+        #     )
         
         # Return the raw depth (no margin added)
         return depth
@@ -867,42 +868,94 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
         # Get geometry for structural element
         struct_geometry = struct_element.get_Geometry(options)
         if not struct_geometry:
-            forms.alert('Could not retrieve geometry for structural element.', title='Error', warn_icon=True)
+            forms.alert(
+                'Could not retrieve geometry for structural element.\n' +
+                'Element may not have visible geometry or may be a symbolic representation.',
+                title='Geometry Error',
+                warn_icon=True
+            )
             return False
         
         # Get geometry for MEP element
         mep_geometry = mep_element.get_Geometry(options)
         if not mep_geometry:
-            forms.alert('Could not retrieve geometry for MEP element.', title='Error', warn_icon=True)
+            forms.alert(
+                'Could not retrieve geometry for MEP element.\n' +
+                'Element may not have visible geometry or may be a symbolic representation.',
+                title='Geometry Error',
+                warn_icon=True
+            )
             return False
         
         # Collect all solids from structural element
         struct_solids = []
-        for geom_obj in struct_geometry:
-            if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
-                # Transform the solid to the current document coordinate system
-                transformed_solid = SolidUtils.CreateTransformed(geom_obj, struct_transform)
-                struct_solids.append(transformed_solid)
-            elif isinstance(geom_obj, GeometryInstance):
-                inst_geom = geom_obj.GetInstanceGeometry()
-                for inst_obj in inst_geom:
-                    if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
-                        transformed_solid = SolidUtils.CreateTransformed(inst_obj, struct_transform)
-                        struct_solids.append(transformed_solid)
+        try:
+            for geom_obj in struct_geometry:
+                try:
+                    if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
+                        # Transform the solid to the current document coordinate system
+                        transformed_solid = SolidUtils.CreateTransformed(geom_obj, struct_transform)
+                        if transformed_solid and transformed_solid.Volume > 0:
+                            struct_solids.append(transformed_solid)
+                    elif isinstance(geom_obj, GeometryInstance):
+                        try:
+                            inst_geom = geom_obj.GetInstanceGeometry()
+                            if inst_geom:
+                                for inst_obj in inst_geom:
+                                    try:
+                                        if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
+                                            transformed_solid = SolidUtils.CreateTransformed(inst_obj, struct_transform)
+                                            if transformed_solid and transformed_solid.Volume > 0:
+                                                struct_solids.append(transformed_solid)
+                                    except Exception as inner_ex:
+                                        continue
+                        except Exception as inst_ex:
+                            continue
+                except Exception as geom_ex:
+                    # Skip problematic geometry objects
+                    continue
+        except Exception as e:
+            forms.alert(
+                'Error processing structural element geometry:\n{}'.format(str(e)),
+                title='Geometry Error',
+                warn_icon=True
+            )
+            return False
         
         # Collect all solids from MEP element
         mep_solids = []
-        for geom_obj in mep_geometry:
-            if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
-                # Transform the solid to the current document coordinate system
-                transformed_solid = SolidUtils.CreateTransformed(geom_obj, mep_transform)
-                mep_solids.append(transformed_solid)
-            elif isinstance(geom_obj, GeometryInstance):
-                inst_geom = geom_obj.GetInstanceGeometry()
-                for inst_obj in inst_geom:
-                    if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
-                        transformed_solid = SolidUtils.CreateTransformed(inst_obj, mep_transform)
-                        mep_solids.append(transformed_solid)
+        try:
+            for geom_obj in mep_geometry:
+                try:
+                    if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
+                        # Transform the solid to the current document coordinate system
+                        transformed_solid = SolidUtils.CreateTransformed(geom_obj, mep_transform)
+                        if transformed_solid and transformed_solid.Volume > 0:
+                            mep_solids.append(transformed_solid)
+                    elif isinstance(geom_obj, GeometryInstance):
+                        try:
+                            inst_geom = geom_obj.GetInstanceGeometry()
+                            if inst_geom:
+                                for inst_obj in inst_geom:
+                                    try:
+                                        if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
+                                            transformed_solid = SolidUtils.CreateTransformed(inst_obj, mep_transform)
+                                            if transformed_solid and transformed_solid.Volume > 0:
+                                                mep_solids.append(transformed_solid)
+                                    except Exception as inner_ex:
+                                        continue
+                        except Exception as inst_ex:
+                            continue
+                except Exception as geom_ex:
+                    # Skip problematic geometry objects
+                    continue
+        except Exception as e:
+            forms.alert(
+                'Error processing MEP element geometry:\n{}'.format(str(e)),
+                title='Geometry Error',
+                warn_icon=True
+            )
+            return False
         
         if not struct_solids:
             forms.alert('No valid solids found in structural element.', title='Warning', warn_icon=True)
@@ -1078,13 +1131,22 @@ def main():
         structural_info.append("Link Name: {}".format(structural_link_instance.Name))
         structural_info.append("Link Document: {}".format(structural_link_doc.Title))
         structural_info.append("Element ID: {}".format(structural_element.Id))
-        structural_info.append("Category: {}".format(
-            structural_element.Category.Name if structural_element.Category else "None"
-        ))
         
-        if hasattr(structural_element, 'Symbol') and structural_element.Symbol:
-            structural_info.append("Family: {}".format(structural_element.Symbol.Family.Name))
-            structural_info.append("Type: {}".format(structural_element.Symbol.Name))
+        try:
+            if structural_element.Category:
+                structural_info.append("Category: {}".format(structural_element.Category.Name))
+            else:
+                structural_info.append("Category: None")
+        except:
+            structural_info.append("Category: Unable to retrieve")
+        
+        try:
+            if hasattr(structural_element, 'Symbol') and structural_element.Symbol:
+                structural_info.append("Family: {}".format(structural_element.Symbol.Family.Name))
+                structural_info.append("Type: {}".format(structural_element.Symbol.Name))
+        except Exception as e:
+            # Skip if family/type info can't be retrieved
+            pass
         
         # forms.alert(
         #     '\n'.join(structural_info) + '\n\nStructural element stored successfully!',
