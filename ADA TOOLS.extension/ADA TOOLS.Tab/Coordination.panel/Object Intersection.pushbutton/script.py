@@ -139,6 +139,64 @@ def get_element_from_link(reference):
     return None, None, None
 
 
+def get_mep_insulation_thickness(mep_element):
+    """Get the insulation thickness of an MEP element"""
+    try:
+        insulation_thickness = 0.0
+        
+        # Method 1: Try to get InsulationThickness property
+        if hasattr(mep_element, 'InsulationThickness'):
+            try:
+                thickness = mep_element.InsulationThickness
+                if thickness and thickness > 0:
+                    insulation_thickness = thickness
+                    return insulation_thickness
+            except:
+                pass
+        
+        # Method 2: Try RBS_INSULATION_THICKNESS parameter
+        if hasattr(mep_element, 'get_Parameter'):
+            try:
+                insulation_param = mep_element.get_Parameter(BuiltInParameter.RBS_INSULATION_THICKNESS)
+                if insulation_param and insulation_param.AsDouble() > 0:
+                    insulation_thickness = insulation_param.AsDouble()
+                    return insulation_thickness
+            except:
+                pass
+        
+        # Method 3: Look through all parameters for "insulation" in name
+        if hasattr(mep_element, 'Parameters'):
+            try:
+                for param in mep_element.Parameters:
+                    param_name = param.Definition.Name.lower()
+                    if 'insulation' in param_name and 'thickness' in param_name:
+                        if param.StorageType == StorageType.Double:
+                            thickness = param.AsDouble()
+                            if thickness and thickness > 0:
+                                insulation_thickness = thickness
+                                return insulation_thickness
+            except:
+                pass
+        
+        # Method 4: Check if MEP element has insulation type set
+        if hasattr(mep_element, 'InsulationType'):
+            try:
+                insulation_type = mep_element.InsulationType
+                if insulation_type and insulation_type.Id != ElementId.InvalidElementId:
+                    # If there's an insulation type, try to get thickness from type
+                    thickness_param = insulation_type.get_Parameter(BuiltInParameter.RBS_INSULATION_THICKNESS)
+                    if thickness_param and thickness_param.AsDouble() > 0:
+                        insulation_thickness = thickness_param.AsDouble()
+                        return insulation_thickness
+            except:
+                pass
+        
+        return insulation_thickness
+        
+    except Exception as e:
+        return 0.0
+
+
 def get_mep_diameter(mep_element):
     """Get the diameter of an MEP element"""
     try:
@@ -194,6 +252,24 @@ def get_mep_diameter(mep_element):
             warn_icon=True
         )
         return 0.0
+
+
+def get_mep_diameter_with_insulation(mep_element):
+    """Get the diameter of an MEP element including insulation thickness and 30mm offset"""
+    try:
+        # Get base diameter
+        diameter = get_mep_diameter(mep_element)
+        
+        # Get insulation thickness
+        insulation_thickness = get_mep_insulation_thickness(mep_element)
+        
+        # Add insulation thickness * 2 (thickness on both sides) + 30mm offset
+        total_diameter = diameter + (insulation_thickness * 2.0) + (30.0 / 304.8)
+        
+        return total_diameter
+        
+    except Exception as e:
+        return get_mep_diameter(mep_element)
 
 
 def get_structural_depth(struct_element):
@@ -1037,8 +1113,8 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
                 # Get the first intersection point (centroid)
                 intersection_point = intersection_results[0]['centroid']
                 
-                # Get MEP diameter + 30mm
-                mep_diameter = get_mep_diameter(mep_element)
+                # Get MEP diameter with insulation
+                mep_diameter = get_mep_diameter_with_insulation(mep_element)
                 
                 # Get structural depth (no margin)
                 structural_depth = get_structural_depth(struct_element)
@@ -1246,14 +1322,23 @@ def main():
                 #     warn_icon=False
                 # )
                 
-                intersection_found = check_geometry_intersection(
-                    structural_element, 
-                    structural_link_instance,
-                    mep_element, 
-                    link_instance,
-                    structural_ref,
-                    mep_reference
-                )
+                try:
+                    intersection_found = check_geometry_intersection(
+                        structural_element, 
+                        structural_link_instance,
+                        mep_element, 
+                        link_instance,
+                        structural_ref,
+                        mep_reference
+                    )
+                except Exception as intersection_error:
+                    forms.alert(
+                        'Error during intersection check:\n{}\n\n'.format(str(intersection_error)) +
+                        'Type: {}'.format(type(intersection_error).__name__),
+                        title='Intersection Error',
+                        warn_icon=True
+                    )
+                    return
                 
             else:
                 forms.alert(
