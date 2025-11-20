@@ -11,6 +11,7 @@ from Autodesk.Revit.UI import *
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from pyrevit import revit, DB, UI, forms
 import math
+import traceback
 
 # Get the current document and UI document
 doc = revit.doc
@@ -285,26 +286,97 @@ def get_structural_depth(struct_element):
             # For Structural Framing (beams)
             if cat_name == 'Structural Framing':
                 # Try to get the depth/height parameter
-                depth_param = struct_element.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
-                if depth_param and depth_param.AsDouble() > 0:
-                    depth = depth_param.AsDouble()
-                    found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (instance)"
-                else:
-                    # Try to get from type
-                    if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
-                        depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
-                        if depth_param and depth_param.AsDouble() > 0:
-                            depth = depth_param.AsDouble()
-                            found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (type)"
+                try:
+                    depth_param = struct_element.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
+                    if depth_param and depth_param.AsDouble() > 0:
+                        depth = depth_param.AsDouble()
+                        found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (instance)"
+                except:
+                    pass
+                
+                # Try to get from type
+                if depth == 0:
+                    try:
+                        if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                            depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_DEPTH)
+                            if depth_param and depth_param.AsDouble() > 0:
+                                depth = depth_param.AsDouble()
+                                found_param_name = "STRUCTURAL_SECTION_COMMON_DEPTH (type)"
+                    except:
+                        pass
                 
                 # If still not found, try height
                 if depth == 0:
-                    depth_param = struct_element.get_Parameter(BuiltInParameter.INSTANCE_STRUCT_USAGE_TEXT_PARAM)
-                    if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
-                        depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_HEIGHT)
-                        if depth_param and depth_param.AsDouble() > 0:
-                            depth = depth_param.AsDouble()
-                            found_param_name = "STRUCTURAL_SECTION_COMMON_HEIGHT"
+                    try:
+                        if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                            depth_param = struct_element.Symbol.get_Parameter(BuiltInParameter.STRUCTURAL_SECTION_COMMON_HEIGHT)
+                            if depth_param and depth_param.AsDouble() > 0:
+                                depth = depth_param.AsDouble()
+                                found_param_name = "STRUCTURAL_SECTION_COMMON_HEIGHT"
+                    except:
+                        pass
+                
+                # If still not found, search for parameters by name (b, h, width, depth)
+                if depth == 0:
+                    try:
+                        # Try 'b' parameter on instance (width)
+                        b_param = struct_element.LookupParameter("b")
+                        if b_param and b_param.AsDouble() > 0:
+                            depth = b_param.AsDouble()
+                            found_param_name = "b (width parameter - instance)"
+                        else:
+                            # Try on type
+                            if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                                b_param = struct_element.Symbol.LookupParameter("b")
+                                if b_param and b_param.AsDouble() > 0:
+                                    depth = b_param.AsDouble()
+                                    found_param_name = "b (width parameter - type)"
+                    except:
+                        pass
+                
+                if depth == 0:
+                    try:
+                        # Try 'h' parameter on instance (height)
+                        h_param = struct_element.LookupParameter("h")
+                        if h_param and h_param.AsDouble() > 0:
+                            depth = h_param.AsDouble()
+                            found_param_name = "h (height parameter - instance)"
+                        else:
+                            # Try on type
+                            if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                                h_param = struct_element.Symbol.LookupParameter("h")
+                                if h_param and h_param.AsDouble() > 0:
+                                    depth = h_param.AsDouble()
+                                    found_param_name = "h (height parameter - type)"
+                    except:
+                        pass
+                
+                # If still zero, search ALL parameters for b or h
+                if depth == 0:
+                    try:
+                        for param in struct_element.Parameters:
+                            param_name = param.Definition.Name
+                            if param_name == "b" or param_name == "h":
+                                if param.StorageType == StorageType.Double and param.AsDouble() > 0:
+                                    depth = param.AsDouble()
+                                    found_param_name = "{} (found in all parameters - instance)".format(param_name)
+                                    break
+                    except:
+                        pass
+                
+                # Check type parameters if still zero
+                if depth == 0:
+                    try:
+                        if hasattr(struct_element, 'Symbol') and struct_element.Symbol:
+                            for param in struct_element.Symbol.Parameters:
+                                param_name = param.Definition.Name
+                                if param_name == "b" or param_name == "h":
+                                    if param.StorageType == StorageType.Double and param.AsDouble() > 0:
+                                        depth = param.AsDouble()
+                                        found_param_name = "{} (found in all parameters - type)".format(param_name)
+                                        break
+                    except:
+                        pass
             
             # For Structural Columns
             elif cat_name == 'Structural Columns':
@@ -405,26 +477,26 @@ def get_structural_depth(struct_element):
                             depth = width_param.AsDouble()
                             found_param_name = "FLOOR_ATTR_THICKNESS_PARAM (type)"
         
-        # Show debug info if depth is still 0
-        # debug_info = 'Structural Depth Calculation:\n'
-        # debug_info += 'Category: {}\n'.format(cat_name if struct_element.Category else 'None')
-        # debug_info += 'Parameter Found: {}\n'.format(found_param_name)
-        # debug_info += 'Depth Value: {:.4f} ft ({:.2f} mm)'.format(depth, depth * 304.8)
+        # Show debug info
+        debug_info = 'Structural Depth Calculation:\n'
+        debug_info += 'Category: {}\n'.format(cat_name if struct_element.Category else 'None')
+        debug_info += 'Parameter Found: {}\n'.format(found_param_name)
+        debug_info += 'Depth Value: {:.4f} ft ({:.2f} mm)'.format(depth, depth * 304.8)
         
-        # if depth == 0:
-        #     forms.alert(
-        #         'WARNING: Structural depth is 0!\n\n' + debug_info + 
-        #         '\n\nPlease verify the element has dimensional parameters.',
-        #         title='Structural Depth Warning',
-        #         warn_icon=True
-        #     )
-        # else:
-        #     # Show success info for debugging
-        #     forms.alert(
-        #         debug_info,
-        #         title='Structural Depth Found',
-        #         warn_icon=False
-        #     )
+        if depth == 0:
+            forms.alert(
+                'WARNING: Structural depth is 0!\n\n' + debug_info + 
+                '\n\nPlease verify the element has dimensional parameters.',
+                title='Structural Depth Warning',
+                warn_icon=True
+            )
+        else:
+            # Show success info for debugging
+            forms.alert(
+                debug_info,
+                title='Structural Depth Found',
+                warn_icon=False
+            )
         
         # Return the raw depth (no margin added)
         return depth
@@ -504,29 +576,39 @@ def is_horizontal_element(struct_element):
         if struct_element.Category:
             cat_name = struct_element.Category.Name
             
-            # For Structural Framing (beams) - check the curve direction
+            # For Structural Framing (beams) - check the orientation
             if cat_name == 'Structural Framing':
-                # Get the location curve
-                if hasattr(struct_element, 'Location') and isinstance(struct_element.Location, LocationCurve):
-                    curve = struct_element.Location.Curve
-                    start_point = curve.GetEndPoint(0)
-                    end_point = curve.GetEndPoint(1)
-                    
-                    # Calculate vertical difference
-                    vertical_diff = abs(end_point.Z - start_point.Z)
-                    # Calculate horizontal difference
-                    horizontal_diff = ((end_point.X - start_point.X)**2 + (end_point.Y - start_point.Y)**2)**0.5
-                    
-                    # If vertical difference is much smaller than horizontal, it's horizontal
-                    # Using a threshold: if vertical change is less than 20% of horizontal change, consider it horizontal
-                    if horizontal_diff > 0:
-                        if vertical_diff / horizontal_diff < 0.2:
-                            return True  # Horizontal
-                        else:
-                            return False  # Vertical or diagonal
-                    else:
-                        # Pure vertical beam
-                        return False
+                # Try to get orientation from transform
+                try:
+                    if hasattr(struct_element, 'Location') and isinstance(struct_element.Location, LocationCurve):
+                        curve = struct_element.Location.Curve
+                        
+                        # Get the transform to check orientation
+                        if hasattr(struct_element.Location, 'Curve'):
+                            # Try to get the hand orientation (cross product direction)
+                            try:
+                                transform = struct_element.GetTransform()
+                                if transform:
+                                    # The BasisZ of the transform indicates the "up" direction of the element
+                                    basis_z = transform.BasisZ
+                                    
+                                    # If Z component is large, beam's "up" is vertical, so beam is VERTICAL
+                                    # If Z component is small, beam's "up" is horizontal, so beam is HORIZONTAL
+                                    z_component = abs(basis_z.Z)
+                                    
+                                    # If Z component is large, beam's "up" is vertical, so beam is VERTICAL
+                                    # If Z component is small, beam's "up" is horizontal, so beam is HORIZONTAL
+                                    if z_component > 0.7:
+                                        return False  # Vertical (BasisZ points up)
+                                    elif z_component < 0.3:
+                                        return True  # Horizontal (BasisZ points sideways)
+                                    else:
+                                        # Diagonal - check which is dominant
+                                        return z_component < 0.5  # If Z < 0.5, more horizontal
+                            except:
+                                pass
+                except:
+                    pass
             
             # For Structural Columns - always vertical
             elif cat_name == 'Structural Columns':
@@ -749,7 +831,7 @@ def place_family_at_point(point, mep_diameter, structural_depth, mep_element, st
             
             selected_symbol = family_dict[selected_family_name]
         
-        # Start a transaction
+        # Start a transaction - moved here before ANY Revit modifications
         t = Transaction(doc, "Place Family at Intersection")
         t.Start()
         
@@ -928,8 +1010,156 @@ def place_family_at_point(point, mep_diameter, structural_depth, mep_element, st
         return None
 
 
+def check_bounding_box_intersection(struct_solids, mep_solids, struct_element, mep_element, structural_ref, mep_reference, struct_link_instance):
+    """Simplified intersection check using bounding boxes for structural framing"""
+    global uidoc
+    try:
+        # Initialize variables
+        struct_bbox = None
+        mep_bbox = None
+        intersection_point = None
+        
+        # Get bounding boxes and check for overlap
+        try:
+            for solid in struct_solids:
+                try:
+                    bbox = solid.GetBoundingBox()
+                    if bbox:
+                        if struct_bbox is None:
+                            struct_bbox = bbox
+                        else:
+                            # Expand to include this bbox
+                            struct_bbox.Min = XYZ(
+                                min(struct_bbox.Min.X, bbox.Min.X),
+                                min(struct_bbox.Min.Y, bbox.Min.Y),
+                                min(struct_bbox.Min.Z, bbox.Min.Z)
+                            )
+                            struct_bbox.Max = XYZ(
+                                max(struct_bbox.Max.X, bbox.Max.X),
+                                max(struct_bbox.Max.Y, bbox.Max.Y),
+                                max(struct_bbox.Max.Z, bbox.Max.Z)
+                            )
+                except Exception as e:
+                    continue
+        except Exception as e:
+            forms.alert(
+                'Error getting structural bounding box:\n{}'.format(str(e)),
+                title='Error',
+                warn_icon=True
+            )
+            return False
+        
+        try:
+            for solid in mep_solids:
+                try:
+                    bbox = solid.GetBoundingBox()
+                    if bbox:
+                        if mep_bbox is None:
+                            mep_bbox = bbox
+                        else:
+                            # Expand to include this bbox
+                            mep_bbox.Min = XYZ(
+                                min(mep_bbox.Min.X, bbox.Min.X),
+                                min(mep_bbox.Min.Y, bbox.Min.Y),
+                                min(mep_bbox.Min.Z, bbox.Min.Z)
+                            )
+                            mep_bbox.Max = XYZ(
+                                max(mep_bbox.Max.X, bbox.Max.X),
+                                max(mep_bbox.Max.Y, bbox.Max.Y),
+                                max(mep_bbox.Max.Z, bbox.Max.Z)
+                            )
+                except Exception as e:
+                    continue
+        except Exception as e:
+            forms.alert(
+                'Error getting MEP bounding box:\n{}'.format(str(e)),
+                title='Error',
+                warn_icon=True
+            )
+            return False
+        
+        if not struct_bbox or not mep_bbox:
+            forms.alert(
+                'Could not get bounding boxes for intersection check.',
+                title='Warning',
+                warn_icon=True
+            )
+            return False
+        
+        # Check if bounding boxes overlap
+        try:
+            overlap_x = not (struct_bbox.Max.X < mep_bbox.Min.X or mep_bbox.Max.X < struct_bbox.Min.X)
+            overlap_y = not (struct_bbox.Max.Y < mep_bbox.Min.Y or mep_bbox.Max.Y < struct_bbox.Min.Y)
+            overlap_z = not (struct_bbox.Max.Z < mep_bbox.Min.Z or mep_bbox.Max.Z < struct_bbox.Min.Z)
+            
+            intersection_found = overlap_x and overlap_y and overlap_z
+        except Exception as e:
+            forms.alert(
+                'Error checking overlap:\n{}'.format(str(e)),
+                title='Error',
+                warn_icon=True
+            )
+            return False
+        
+        if intersection_found:
+            try:
+                # Calculate approximate intersection point (center of overlap region)
+                intersection_point = XYZ(
+                    (max(struct_bbox.Min.X, mep_bbox.Min.X) + min(struct_bbox.Max.X, mep_bbox.Max.X)) / 2.0,
+                    (max(struct_bbox.Min.Y, mep_bbox.Min.Y) + min(struct_bbox.Max.Y, mep_bbox.Max.Y)) / 2.0,
+                    (max(struct_bbox.Min.Z, mep_bbox.Min.Z) + min(struct_bbox.Max.Z, mep_bbox.Max.Z)) / 2.0
+                )
+            except Exception as e:
+                forms.alert(
+                    'Error calculating intersection point:\n{}'.format(str(e)),
+                    title='Error',
+                    warn_icon=True
+                )
+                return False
+            
+            # Ask user if they want to place a family at the intersection point
+            try:
+                if forms.alert(
+                    'Bounding boxes overlap - intersection likely!\n\n' +
+                    'Do you want to place a family instance at the approximate intersection point?',
+                    title='Place Family',
+                    yes=True,
+                    no=True
+                ):
+                    # Get MEP diameter with insulation
+                    mep_diameter = get_mep_diameter_with_insulation(mep_element)
+                    
+                    # Get structural depth (no margin)
+                    structural_depth = get_structural_depth(struct_element)
+                    
+                    # Place family at intersection point with parameters
+                    place_family_at_point(intersection_point, mep_diameter, structural_depth, mep_element, struct_element)
+                
+                # Highlight both elements
+                uidoc.Selection.SetReferences([structural_ref, mep_reference])
+            except Exception as e:
+                forms.alert(
+                    'Error placing family:\n{}'.format(str(e)),
+                    title='Error',
+                    warn_icon=True
+                )
+            
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        forms.alert(
+            'Error during bounding box intersection check:\n{}\nType: {}'.format(str(e), type(e).__name__),
+            title='Error',
+            warn_icon=True
+        )
+        return False
+
+
 def check_geometry_intersection(struct_element, struct_link_instance, mep_element, mep_link_instance, structural_ref, mep_reference):
     """Check if two elements' geometries intersect and find intersection points"""
+    global uidoc, doc
     try:
         # Get geometry options
         options = Options()
@@ -940,6 +1170,11 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
         # Get the transforms for both link instances
         struct_transform = struct_link_instance.GetTotalTransform()
         mep_transform = mep_link_instance.GetTotalTransform()
+        
+        # Check if structural element is framing - use simplified approach
+        is_structural_framing = False
+        if struct_element.Category:
+            is_structural_framing = (struct_element.Category.Name == 'Structural Framing')
         
         # Get geometry for structural element
         struct_geometry = struct_element.get_Geometry(options)
@@ -966,33 +1201,47 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
         # Collect all solids from structural element
         struct_solids = []
         try:
-            for geom_obj in struct_geometry:
-                try:
-                    if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
-                        # Transform the solid to the current document coordinate system
-                        transformed_solid = SolidUtils.CreateTransformed(geom_obj, struct_transform)
-                        if transformed_solid and transformed_solid.Volume > 0:
-                            struct_solids.append(transformed_solid)
-                    elif isinstance(geom_obj, GeometryInstance):
-                        try:
-                            inst_geom = geom_obj.GetInstanceGeometry()
-                            if inst_geom:
-                                for inst_obj in inst_geom:
+            if struct_geometry:
+                for geom_obj in struct_geometry:
+                    try:
+                        if geom_obj and isinstance(geom_obj, Solid):
+                            try:
+                                if geom_obj.Volume > 0:
+                                    # Transform the solid to the current document coordinate system
                                     try:
-                                        if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
-                                            transformed_solid = SolidUtils.CreateTransformed(inst_obj, struct_transform)
-                                            if transformed_solid and transformed_solid.Volume > 0:
-                                                struct_solids.append(transformed_solid)
-                                    except Exception as inner_ex:
-                                        continue
-                        except Exception as inst_ex:
-                            continue
-                except Exception as geom_ex:
-                    # Skip problematic geometry objects
-                    continue
+                                        transformed_solid = SolidUtils.CreateTransformed(geom_obj, struct_transform)
+                                        if transformed_solid and transformed_solid.Volume > 0:
+                                            struct_solids.append(transformed_solid)
+                                    except:
+                                        pass
+                            except:
+                                pass
+                        elif geom_obj and isinstance(geom_obj, GeometryInstance):
+                            try:
+                                inst_geom = geom_obj.GetInstanceGeometry()
+                                if inst_geom:
+                                    for inst_obj in inst_geom:
+                                        try:
+                                            if inst_obj and isinstance(inst_obj, Solid):
+                                                try:
+                                                    if inst_obj.Volume > 0:
+                                                        try:
+                                                            transformed_solid = SolidUtils.CreateTransformed(inst_obj, struct_transform)
+                                                            if transformed_solid and transformed_solid.Volume > 0:
+                                                                struct_solids.append(transformed_solid)
+                                                        except:
+                                                            pass
+                                                except:
+                                                    pass
+                                        except:
+                                            pass
+                            except:
+                                pass
+                    except:
+                        pass
         except Exception as e:
             forms.alert(
-                'Error processing structural element geometry:\n{}'.format(str(e)),
+                'Error processing structural element geometry:\n{}\nType: {}'.format(str(e), type(e).__name__),
                 title='Geometry Error',
                 warn_icon=True
             )
@@ -1001,33 +1250,47 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
         # Collect all solids from MEP element
         mep_solids = []
         try:
-            for geom_obj in mep_geometry:
-                try:
-                    if isinstance(geom_obj, Solid) and geom_obj.Volume > 0:
-                        # Transform the solid to the current document coordinate system
-                        transformed_solid = SolidUtils.CreateTransformed(geom_obj, mep_transform)
-                        if transformed_solid and transformed_solid.Volume > 0:
-                            mep_solids.append(transformed_solid)
-                    elif isinstance(geom_obj, GeometryInstance):
-                        try:
-                            inst_geom = geom_obj.GetInstanceGeometry()
-                            if inst_geom:
-                                for inst_obj in inst_geom:
+            if mep_geometry:
+                for geom_obj in mep_geometry:
+                    try:
+                        if geom_obj and isinstance(geom_obj, Solid):
+                            try:
+                                if geom_obj.Volume > 0:
+                                    # Transform the solid to the current document coordinate system
                                     try:
-                                        if isinstance(inst_obj, Solid) and inst_obj.Volume > 0:
-                                            transformed_solid = SolidUtils.CreateTransformed(inst_obj, mep_transform)
-                                            if transformed_solid and transformed_solid.Volume > 0:
-                                                mep_solids.append(transformed_solid)
-                                    except Exception as inner_ex:
-                                        continue
-                        except Exception as inst_ex:
-                            continue
-                except Exception as geom_ex:
-                    # Skip problematic geometry objects
-                    continue
+                                        transformed_solid = SolidUtils.CreateTransformed(geom_obj, mep_transform)
+                                        if transformed_solid and transformed_solid.Volume > 0:
+                                            mep_solids.append(transformed_solid)
+                                    except:
+                                        pass
+                            except:
+                                pass
+                        elif geom_obj and isinstance(geom_obj, GeometryInstance):
+                            try:
+                                inst_geom = geom_obj.GetInstanceGeometry()
+                                if inst_geom:
+                                    for inst_obj in inst_geom:
+                                        try:
+                                            if inst_obj and isinstance(inst_obj, Solid):
+                                                try:
+                                                    if inst_obj.Volume > 0:
+                                                        try:
+                                                            transformed_solid = SolidUtils.CreateTransformed(inst_obj, mep_transform)
+                                                            if transformed_solid and transformed_solid.Volume > 0:
+                                                                mep_solids.append(transformed_solid)
+                                                        except:
+                                                            pass
+                                                except:
+                                                    pass
+                                        except:
+                                            pass
+                            except:
+                                pass
+                    except:
+                        pass
         except Exception as e:
             forms.alert(
-                'Error processing MEP element geometry:\n{}'.format(str(e)),
+                'Error processing MEP element geometry:\n{}\nType: {}'.format(str(e), type(e).__name__),
                 title='Geometry Error',
                 warn_icon=True
             )
@@ -1041,7 +1304,14 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
             forms.alert('No valid solids found in MEP element.', title='Warning', warn_icon=True)
             return False
         
-        # Check for intersections
+        # Disabled structural framing special handling - use regular intersection for all
+        # if is_structural_framing:
+        #     return check_bounding_box_intersection(
+        #         struct_solids, mep_solids, struct_element, mep_element,
+        #         structural_ref, mep_reference, struct_link_instance
+        #     )
+        
+        # Check for intersections using boolean operations (for all elements)
         intersection_results = []
         intersection_found = False
         
@@ -1148,8 +1418,9 @@ def check_geometry_intersection(struct_element, struct_link_instance, mep_elemen
         return intersection_found
         
     except Exception as e:
+        tb = traceback.format_exc()
         forms.alert(
-            'Error during geometry intersection check:\n{}'.format(str(e)),
+            'Error during geometry intersection check:\n{}\n\nFull traceback:\n{}'.format(str(e), tb),
             title='Error',
             warn_icon=True
         )
@@ -1288,8 +1559,16 @@ def main():
                 ))
                 
                 if hasattr(structural_element, 'Symbol') and structural_element.Symbol:
-                    info.append("  Family: {}".format(structural_element.Symbol.Family.Name))
-                    info.append("  Type: {}".format(structural_element.Symbol.Name))
+                    try:
+                        info.append("  Family: {}".format(structural_element.Symbol.Family.Name))
+                    except:
+                        pass
+                    try:
+                        type_name_param = structural_element.Symbol.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)
+                        if type_name_param:
+                            info.append("  Type: {}".format(type_name_param.AsString()))
+                    except:
+                        pass
                 
                 # MEP element info
                 info.append("\nMEP ELEMENT (IN LINK):")
@@ -1303,10 +1582,21 @@ def main():
                 
                 # Get family and type name if applicable
                 if hasattr(mep_element, 'Symbol') and mep_element.Symbol:
-                    info.append("  Family: {}".format(mep_element.Symbol.Family.Name))
-                    info.append("  Type: {}".format(mep_element.Symbol.Name))
+                    try:
+                        info.append("  Family: {}".format(mep_element.Symbol.Family.Name))
+                    except:
+                        pass
+                    try:
+                        type_name_param = mep_element.Symbol.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)
+                        if type_name_param:
+                            info.append("  Type: {}".format(type_name_param.AsString()))
+                    except:
+                        pass
                 elif hasattr(mep_element, 'Name'):
-                    info.append("  Name: {}".format(mep_element.Name))
+                    try:
+                        info.append("  Name: {}".format(mep_element.Name))
+                    except:
+                        pass
                 
                 # Show the information
                 # forms.alert(
@@ -1332,9 +1622,11 @@ def main():
                         mep_reference
                     )
                 except Exception as intersection_error:
+                    tb = traceback.format_exc()
                     forms.alert(
                         'Error during intersection check:\n{}\n\n'.format(str(intersection_error)) +
-                        'Type: {}'.format(type(intersection_error).__name__),
+                        'Type: {}\n\n'.format(type(intersection_error).__name__) +
+                        'Full Traceback:\n{}'.format(tb),
                         title='Intersection Error',
                         warn_icon=True
                     )
@@ -1349,8 +1641,9 @@ def main():
     
     except Exception as e:
         if 'cancel' not in str(e).lower():
+            tb = traceback.format_exc()
             forms.alert(
-                'Error: {}'.format(str(e)),
+                'Error: {}\n\nFull Traceback:\n{}'.format(str(e), tb),
                 title='Error',
                 warn_icon=True
             )
