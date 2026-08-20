@@ -30,7 +30,7 @@ class WorksetItemUI:
         self.checkbox = None
         
     def __str__(self):
-        return "{} [{}]".format(self.name, self.visibility_status)
+        return "{} [{}]".format(self.name.replace("_", " ", 1), self.visibility_status)
 
 class WorksetVisibilityWindow(Window):
     """Main window for workset visibility management"""
@@ -188,7 +188,7 @@ class WorksetVisibilityWindow(Window):
             # Create a checkbox for each workset
             checkbox = CheckBox()
             checkbox.IsChecked = item.is_checked
-            checkbox.Content = str(item)
+            checkbox.Content = str(item).replace("_", "__")
             checkbox.Tag = item
             checkbox.Checked += self._on_checkbox_changed
             checkbox.Unchecked += self._on_checkbox_changed
@@ -225,7 +225,7 @@ class WorksetVisibilityWindow(Window):
         else:
             self.filtered_worksets = [
                 item for item in self.all_worksets
-                if search_text in item.name.lower()
+                if search_text in item.name.replace("_", " ", 1).lower()
             ]
         
         self._update_listbox()
@@ -348,13 +348,9 @@ def main():
                 
                 if action == "show":
                     active_view.SetWorksetVisibility(workset_id, DB.WorksetVisibility.Visible)
-                    print("Showing workset: {}".format(workset_item.name))
-                
+
                 elif action == "hide":
                     active_view.SetWorksetVisibility(workset_id, DB.WorksetVisibility.Hidden)
-                    print("Hiding workset: {}".format(workset_item.name))
-        
-        print("\nWorkset visibility changes completed successfully in view: {}".format(active_view.Name))
 
 if __name__ == "__main__":
     main()
