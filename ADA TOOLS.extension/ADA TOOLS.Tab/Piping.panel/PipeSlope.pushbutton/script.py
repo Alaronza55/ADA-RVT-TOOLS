@@ -199,7 +199,7 @@ if direction == OPT_POINT:
         script.exit()
 
 raw_value = forms.ask_for_string(
-    default="1.0",
+    default="1.5",
     prompt="Slope in percent (for example 1.5 for 1.5%)",
     title="Slope value"
 )

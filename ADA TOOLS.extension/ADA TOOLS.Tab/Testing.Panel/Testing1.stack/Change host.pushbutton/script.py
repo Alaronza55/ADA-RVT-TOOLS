@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 __title__ = "Set Opening\nHost to View"
-__author__ = "Your Name"
+__author__ = "ADA"
 __doc__ = """Changes the host of generic models containing 'BES_Opening' 
 from linked models to the active view's level by recreating them with exact same position and parameters."""
 

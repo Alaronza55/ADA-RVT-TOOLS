@@ -1,9 +1,9 @@
 ---
 layout:
   - Info
+  - Coordinates
   - Workset
   - Coordination
-  - Coordinates
   - Place X views on 1 Sheet
   - Sections
   - Dimension

@@ -7,7 +7,7 @@ Works with metric units (meters)
 """
 
 __title__ = "Openings\nAbsolute Level"
-__author__ = "Your Name"
+__author__ = "ADA"
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector,

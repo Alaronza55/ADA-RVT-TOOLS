@@ -8,7 +8,7 @@ Colors electrical tags blue if their host element is from a linked model contain
 """
 
 __title__ = "Color MEP Tags\nby Linked Model"
-__author__ = "Your Name"
+__author__ = "ADA"
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector, 
