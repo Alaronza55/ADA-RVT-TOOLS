@@ -1,9 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Select Element in Linked Model
-This script allows you to select an element inside a linked Revit model.
+"""
+Place a structural opening (BES_RESA family) where an MEP element
+crosses a structural element, both selected inside linked models.
+
+Step 1: select a structural element in a link (beam, column, wall,
+floor, roof, foundation...).
+Step 2: select an MEP element in a link (duct, pipe, conduit, cable
+tray...).
+
+The script checks whether the two geometries actually intersect. If
+they do, it automatically places a BES_RESA family instance at the
+intersection point, sized from the MEP diameter/width/height (plus
+insulation thickness, if any) and the structural element's depth, and
+rotated to align with the MEP element's direction. If no matching
+BES_RESA type is found, or the MEP shape isn't round/rectangular, you
+are prompted to pick a family type to place instead.
 """
 
-__title__ = 'Select Element\nin Link'
+__title__ = 'Place\nOpening'
 __author__ = "ADA"
 
 from Autodesk.Revit.DB import *

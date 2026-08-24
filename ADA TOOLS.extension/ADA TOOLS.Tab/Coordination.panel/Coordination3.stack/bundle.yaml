@@ -1,0 +1,4 @@
+layout:
+  - CSV_CopyNumber
+  - CSV_OpeNumber
+  - Instance_CopyNumber

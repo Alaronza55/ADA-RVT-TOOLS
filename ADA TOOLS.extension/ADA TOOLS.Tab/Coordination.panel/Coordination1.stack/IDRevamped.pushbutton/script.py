@@ -3,9 +3,9 @@
 Select an element by pasting text that contains its Element ID in
 brackets, e.g. 'Pipe Insulation [3290719]' (as copied from a schedule
 or the status bar). The element is selected in the active view without
-switching views.
+switching views. Perfect for copy paste from Navisworks!'
 """
-__title__ = "ID Revamped"
+__title__ = "[ID]Isolate"
 __author__ = "ADA"
 
 import re
