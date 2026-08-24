@@ -2,7 +2,7 @@
 Select Elements and Get Total Geometric Length
 """
 __title__ = "Get Length"
-__author__ = "Your Name"
+__author__ = "ADA"
 
 from pyrevit import revit, DB, UI
 from pyrevit import forms
@@ -110,64 +110,92 @@ def get_element_length(element):
     return None
 
 try:
-    # Get selection
-    selection = uidoc.Selection
-    selected_ids = selection.GetElementIds()
-    
-    if not selected_ids or selected_ids.Count == 0:
+    # Ask the user where to pick elements from
+    source = forms.CommandSwitchWindow.show(
+        ["Current Model", "Linked Model"],
+        message="Select elements in:"
+    )
+
+    if not source:
+        forms.alert("Cancelled.", exitscript=True)
+
+    # Each entry is (element, source_doc, display_id)
+    picked_elements = []
+
+    if source == "Current Model":
+        # Reuse existing selection if there is one, otherwise prompt
+        selection = uidoc.Selection
+        selected_ids = selection.GetElementIds()
+
+        if not selected_ids or selected_ids.Count == 0:
+            refs = uidoc.Selection.PickObjects(
+                UI.Selection.ObjectType.Element,
+                "Select elements to calculate their length"
+            )
+            selected_ids = [ref.ElementId for ref in refs]
+
+        for elem_id in selected_ids:
+            element = doc.GetElement(elem_id)
+            picked_elements.append((element, doc, elem_id.IntegerValue))
+
+    else:  # Linked Model
         refs = uidoc.Selection.PickObjects(
-            UI.Selection.ObjectType.Element,
-            "Select elements to calculate their length"
+            UI.Selection.ObjectType.LinkedElement,
+            "Select elements in the linked model to calculate their length"
         )
-        selected_ids = [ref.ElementId for ref in refs]
-    
-    if not selected_ids:
+
+        for ref in refs:
+            link_instance = doc.GetElement(ref.ElementId)
+            linked_doc = link_instance.GetLinkDocument()
+            linked_element = linked_doc.GetElement(ref.LinkedElementId)
+            picked_elements.append(
+                (linked_element, linked_doc, ref.LinkedElementId.IntegerValue))
+
+    if not picked_elements:
         forms.alert("No elements selected.", exitscript=True)
-    
+
     total_length = 0.0
     elements_with_length = 0
     elements_without_length = 0
     element_details = []
-    
+
     print("=" * 70)
     print("CALCULATING ELEMENT LENGTHS")
     print("=" * 70)
-    
+
     # Process each selected element
-    for elem_id in selected_ids:
-        element = doc.GetElement(elem_id)
-        
+    for element, element_doc, display_id in picked_elements:
         # Get element info
         element_name = "Unnamed"
         try:
             element_name = element.Name
         except:
             pass
-        
+
         element_category = "No Category"
         try:
             if element.Category:
                 element_category = element.Category.Name
         except:
             pass
-        
+
         # Get length
         length = get_element_length(element)
-        
+
         if length and length > 0:
             total_length += length
             elements_with_length += 1
             element_details.append({
-                'id': elem_id.IntegerValue,
+                'id': display_id,
                 'name': element_name,
                 'category': element_category,
                 'length': length
             })
             print("\nElement ID {}: {:.2f} m".format(
-                elem_id.IntegerValue, length * 0.3048))
+                display_id, length * 0.3048))
         else:
             elements_without_length += 1
-            print("\nElement ID {}: No length found".format(elem_id.IntegerValue))
+            print("\nElement ID {}: No length found".format(display_id))
     
     # Convert to display units
     total_length_mm = total_length * 304.8
@@ -177,7 +205,7 @@ try:
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    print("Total elements selected: {}".format(len(selected_ids)))
+    print("Total elements selected: {}".format(len(picked_elements)))
     print("Elements with length: {}".format(elements_with_length))
     print("Elements without length: {}".format(elements_without_length))
     print("-" * 70)
