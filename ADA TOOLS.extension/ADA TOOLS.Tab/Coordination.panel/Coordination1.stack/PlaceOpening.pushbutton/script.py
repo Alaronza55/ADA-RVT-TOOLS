@@ -12,9 +12,11 @@ The script checks whether the two geometries actually intersect. If
 they do, it automatically places a BES_RESA family instance at the
 intersection point, sized from the MEP diameter/width/height (plus
 insulation thickness, if any) and the structural element's depth, and
-rotated to align with the MEP element's direction. If no matching
-BES_RESA type is found, or the MEP shape isn't round/rectangular, you
-are prompted to pick a family type to place instead.
+rotated to align with the MEP element's direction. For round MEP
+elements, a fixed 30mm clearance offset is added on top of the
+diameter and insulation thickness. If no matching BES_RESA type is
+found, or the MEP shape isn't round/rectangular, you are prompted to
+pick a family type to place instead.
 """
 
 __title__ = 'Place\nOpening'

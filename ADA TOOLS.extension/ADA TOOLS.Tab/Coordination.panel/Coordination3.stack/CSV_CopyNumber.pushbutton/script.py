@@ -1,7 +1,17 @@
 # -*- coding: utf-8 -*-
-# PyRevit script - IronPython 2 compatible
-# Copies Generic Model elements from a linked model into the active document
-# based on OPE_NUMBER values read from a CSV file.
+"""
+Copy Generic Model elements from a linked model into the active
+document, based on OPE_NUMBER values read from a CSV file.
+
+Pick a CSV file (comma-separated, one or more OPE_NUMBER values per
+row or column), then select which loaded link to search. The script
+scans the link's Generic Model instances for an OPE_NUMBER parameter
+value (instance or type) matching one of the CSV values, copies every
+match into the active document at its linked position, and prints a
+summary table of what was copied.
+"""
+__title__ = "CSV Copy\nNumber"
+__author__ = "ADA"
 
 import os
 import sys

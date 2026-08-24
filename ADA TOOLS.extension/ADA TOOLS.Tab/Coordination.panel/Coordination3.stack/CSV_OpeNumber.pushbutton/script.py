@@ -10,7 +10,7 @@ Compatible with: IronPython 2 / PyRevit
 """
 
 __title__ = "Select by\nOPE_NUMBER"
-__author__ = "BESIX"
+__author__ = "ADA"
 
 import csv
 import StringIO

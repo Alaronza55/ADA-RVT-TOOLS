@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 __title__ = "Template for my custom WPF windows."
-__author__ = "Erik Frits"
+__author__ = "ADA"
 
 # ╦╔╦╗╔═╗╔═╗╦═╗╔╦╗╔═╗
 # ║║║║╠═╝║ ║╠╦╝ ║ ╚═╗
