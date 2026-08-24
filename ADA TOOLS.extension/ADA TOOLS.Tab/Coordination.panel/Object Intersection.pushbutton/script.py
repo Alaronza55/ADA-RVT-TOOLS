@@ -4,7 +4,7 @@ This script allows you to select an element inside a linked Revit model.
 """
 
 __title__ = 'Select Element\nin Link'
-__author__ = 'Your Name'
+__author__ = "ADA"
 
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI import *

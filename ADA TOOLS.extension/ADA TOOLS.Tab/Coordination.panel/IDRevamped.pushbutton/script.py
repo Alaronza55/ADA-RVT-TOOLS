@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+"""
+Select an element by pasting text that contains its Element ID in
+brackets, e.g. 'Pipe Insulation [3290719]' (as copied from a schedule
+or the status bar). The element is selected in the active view without
+switching views.
+"""
+__title__ = "ID Revamped"
+__author__ = "ADA"
+
 import re
 import System
 from pyrevit import forms, revit, script

@@ -5,7 +5,7 @@ with 'BES_Opening_Horizontal-circular' and aligns their geometry centers in the 
 """
 
 __title__ = 'Replace & Align\nCircular Openings_Vertical'
-__author__ = 'Your Name'
+__author__ = "ADA"
 
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.DB.Structure import StructuralType

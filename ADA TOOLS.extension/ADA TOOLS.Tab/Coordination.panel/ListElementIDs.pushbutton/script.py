@@ -58,11 +58,14 @@ try:
     print("SELECTED ELEMENT IDs")
     print("=" * 70)
 
+    entries = []
     for display_id, link_name in picked_ids:
         if link_name:
-            print("{}  (in link: {})".format(display_id, link_name))
+            entries.append("{} (in link: {})".format(display_id, link_name))
         else:
-            print(display_id)
+            entries.append(str(display_id))
+
+    print("; ".join(entries))
 
     print("-" * 70)
     print("Total elements selected: {}".format(len(picked_ids)))

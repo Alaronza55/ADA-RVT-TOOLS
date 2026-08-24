@@ -4,7 +4,7 @@ Toggles visibility of Project Base Point, Survey Point, and Site in the active v
 Note: Internal Origin cannot be controlled via visibility settings in the API.
 """
 __title__ = 'Toggle\nBase Points'
-__author__ = 'Your Name'
+__author__ = "ADA"
 
 from pyrevit import revit, DB, forms
 
