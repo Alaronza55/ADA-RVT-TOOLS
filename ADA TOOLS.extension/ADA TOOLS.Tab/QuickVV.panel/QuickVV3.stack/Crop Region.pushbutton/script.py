@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Hide Crop Regions
-----------------
-This script allows you to select views on a sheet and hides their crop regions.
+On a sheet, pick one or more viewports and hide their crop region
+visibility (the black boundary rectangle around each view), without
+affecting the view's actual crop extents.
 """
+__title__ = "Hide\nCrop Region"
+__author__ = "ADA"
 
 from pyrevit import revit, script, forms
 from Autodesk.Revit import DB

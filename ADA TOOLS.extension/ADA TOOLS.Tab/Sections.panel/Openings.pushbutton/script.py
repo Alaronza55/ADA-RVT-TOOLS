@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 __title__   = "Element Section"
 __version__ = 'Version = 0.2 (Beta)'
-__doc__ = """Date    = 31.03.2024
-_____________________________________________________________________
-Description:
-...
+__doc__ = """Generate a section view cropped to each selected element.
 
-_____________________________________________________________________
+Pick one or more categories (walls, doors, columns, generic
+models...), pick elements matching those categories, then pick a
+section view type. A section view is created per element, cropped
+to that element's bounding box - a fast way to get an isolated
+section cut through, say, every opening or column you just selected,
+without manually drawing each section line.
+
 Author: ADA"""
 __author__ = "ADA"
 # ╦╔╦╗╔═╗╔═╗╦═╗╔╦╗╔═╗

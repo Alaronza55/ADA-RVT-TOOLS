@@ -1,3 +1,14 @@
+"""
+Report the on-disk size of every loadable family in the project,
+its category, number of types, and whether it has any placed
+instances. Size is measured by opening each family (EditFamily) and
+saving it to a temporary file, so this can take a while on projects
+with many families - it is the only reliable way to get a family's
+real file size from inside the project (an unused, bloated family
+won't otherwise show up anywhere in the UI).
+
+Results are printed to the console and exported to CSV.
+"""
 from Autodesk.Revit.DB import FilteredElementCollector, Family, SaveAsOptions, FamilyInstance
 import os
 import tempfile

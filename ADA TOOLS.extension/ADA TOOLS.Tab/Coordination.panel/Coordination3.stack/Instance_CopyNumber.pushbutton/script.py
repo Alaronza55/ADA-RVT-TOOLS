@@ -1,7 +1,16 @@
 # -*- coding: utf-8 -*-
-# PyRevit script - IronPython 2 compatible
-# Copies Generic Model elements from a linked model into the active document
-# based on a single OPE_NUMBER value typed by the user.
+"""
+Copy Generic Model elements from a linked model into the active
+document, based on a single OPE_NUMBER value you type in.
+
+Type an OPE_NUMBER, pick which loaded link to search, and every
+Generic Model in that link whose OPE_NUMBER matches (instance or
+type parameter) is copied into the active document at its linked
+position. Same idea as "CSV Copy Number", but for one value at a
+time instead of a batch from a file.
+"""
+__title__ = "Instance Copy\nNumber"
+__author__ = "ADA"
 
 from pyrevit import forms, revit, script
 from Autodesk.Revit.DB import (

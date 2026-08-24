@@ -1,13 +1,14 @@
 """
-Set Tag Leader Elbow
-Sets the leader elbow position using X from leader end and Y from leader start
+Select tags with a leader and square off each leader's elbow: the
+elbow point is moved to (X of the leader end, Y of the leader start)
+- turning a diagonal leader into a clean 90-degree bend (horizontal
+from the tag, then vertical to the element).
 """
 
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI.Selection import ObjectType
 from pyrevit import revit, forms
 
-__doc__ = 'Select tags to set their leader elbow positions (X from end, Y from start)'
 __title__ = 'Set Leader\nElbow'
 __author__ = 'Alaronza'
 

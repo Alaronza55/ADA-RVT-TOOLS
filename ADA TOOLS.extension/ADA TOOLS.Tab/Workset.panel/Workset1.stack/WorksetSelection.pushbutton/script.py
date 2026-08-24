@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Lists all user worksets, lets you pick one or more,
-then selects every element belonging to them."""
+"""
+List all user worksets, pick one or more, choose whether to search
+the entire model or just the active view, then select every element
+belonging to the chosen workset(s). Requires a workshared model.
+"""
 
 __title__ = "Select by\nWorkset"
 __author__ = "ADA Tools"

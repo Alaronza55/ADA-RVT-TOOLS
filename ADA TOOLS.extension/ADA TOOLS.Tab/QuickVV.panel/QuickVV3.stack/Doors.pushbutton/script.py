@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
+"""
+Pick a floor, then pick a door: the floor's thickness (from its
+compound structure) is written to the door's "BES_RESA_Under Door"
+parameter (positive value) and to its "Sill Height" parameter
+(negative value, i.e. the door sits recessed by that thickness).
+"""
 __title__ = "Floor Thickness\nto Door"
-__doc__ = "Copies floor thickness to door parameters: BES_RESA_Under Door (positive) and Sill Height (negative)"
+__author__ = "ADA"
 
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter

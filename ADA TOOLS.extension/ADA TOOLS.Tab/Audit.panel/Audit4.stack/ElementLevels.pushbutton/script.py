@@ -1,5 +1,16 @@
 """
-Retrieve Model Elements with ID and Level
+Export every element from a broad set of model categories (walls,
+doors, windows, floors, ceilings, roofs, stairs, generic models,
+plumbing/mechanical/electrical fixtures and equipment, furniture,
+planting, structural framing...) with its Element ID and associated
+Level.
+
+Since not every category exposes its level the same way, each
+category has its own level-resolution logic (e.g. host level,
+"Schedule Level" parameter, or a category-specific fallback) rather
+than one generic lookup.
+
+Exported to CSV.
 """
 __title__ = "Export Elements\nwith Level"
 __author__ = "ADA"

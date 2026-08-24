@@ -1,5 +1,30 @@
 """
-Select Elements and Get Total Geometric Length
+Select one or more elements (in the current model or in a linked
+model) and get their total length.
+
+Measurement method, per element, tried in order until one succeeds:
+1. Location Curve: if the element's Location is a curve (pipes,
+   ducts, conduits, structural framing, walls...), that curve's
+   actual length is used - the most reliable method, and correct
+   even for sloped or curved elements.
+2. Parameter: the "OPE_THICKNESS" parameter if present (for
+   openings), otherwise a "Length" parameter if the element has one.
+3. Bounding box: the element's bounding box is measured along X, Y
+   and Z, and classified as vertical or horizontal based on how much
+   one dimension dominates the other two; the corresponding dimension
+   is used. This is an approximation - it can be wrong for elements
+   that are diagonal or have no clearly dominant dimension.
+4. Geometry edges: as a last resort, every curve/edge in the
+   element's geometry (including nested geometry instances and solid
+   edges) is collected and the SINGLE LONGEST one is used - not a
+   sum, just the longest edge found.
+
+Because the method varies per element, mixing element types in one
+selection can mix measurement methods too. See the hover diagram for
+a visual comparison of methods 1 and 3, the two most common.
+
+Results are printed per element and as a running total, in feet,
+meters and millimeters.
 """
 __title__ = "Get Length"
 __author__ = "ADA"

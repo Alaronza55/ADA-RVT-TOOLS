@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Replace and Align Family Instances
-Replaces all instances of family type 'BES_RESA_CIRC: BES_RESA CIRC HORIZONTAL' 
-with 'BES_Opening_Horizontal-circular' and aligns their geometry centers in the active view.
+"""
+Replace every instance of 'BES_RESA_CIRC: BES_RESA CIRC VERTICAL' in
+the active view with 'BES_Opening_Vertical-circular', placing the
+new instance at the old one's actual geometry center (computed from
+its solid geometry, not just its insertion point) so the replacement
+lines up exactly with the opening it's replacing.
 """
 
 __title__ = 'Replace & Align\nCircular Openings_Vertical'

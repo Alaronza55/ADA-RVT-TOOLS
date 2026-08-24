@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
-"""List All Worksets - Simple Table
-Lists all worksets in the current project in a simple table format.
+"""
+List every user workset in the project, with the element count in
+each one (view-specific elements, link types, legend components and
+mass element types are excluded from the count). Requires a
+workshared model - alerts and exits otherwise.
+
+Results are printed to the pyRevit console and exported to CSV.
 """
 
 __title__ = "Worksets Audit"

@@ -1,10 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Replace and Align Family Instances
-Replaces all instances of family type 'BES_RESA_CIRC: BES_RESA CIRC HORIZONTAL' 
-with 'BES_Opening_Horizontal-circular' and aligns their geometry centers in the active view.
+"""
+Replace every instance of 'BES_RESA_CIRC: BES_RESA CIRC HORIZONTAL'
+in the active view with 'BES_Opening_Horizontal-circular', placing
+the new instance at the old one's actual geometry center (computed
+from its solid geometry, not just its insertion point) so the
+replacement lines up exactly with the opening it's replacing.
+
+NOTE: this appears to duplicate Coordination4.stack's
+"ReplaceFamiliesHorizontal.pushbutton" (same source/target family
+names) - this copy just sits at the panel root instead of in that
+stack. Worth checking whether one of the two should be removed.
 """
 
-__title__ = 'Replace & Align\nCircular Openings_Horiztonal'
+__title__ = 'Replace & Align\nCircular Openings_Horizontal'
 __author__ = 'ADA'
 
 from Autodesk.Revit.DB import *

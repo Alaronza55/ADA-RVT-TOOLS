@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Retrieves Project Base Point and Shared Site Coordinates with selectable units.
-
-This script retrieves and displays the coordinates of the Project Base Point
-and the Shared Site Point in the current Revit project, allowing the user
-to select the desired output units.
+"""
+Report the Project Base Point and the Survey/Shared Point - each
+with North/South, East/West, Elevation and angle-to-true-north - in
+a display unit you choose (meters, centimeters or millimeters).
+Printed to the pyRevit output window only (see "Get Project
+Coordinates" in the Audit panel for a version that also reports the
+Internal Origin and exports to CSV).
 """
 __title__ = "Get Project\nCoordinates"
 __author__ = "ADA"
-__doc__ = "Retrieves and displays the Project Base Point and Shared Site Point coordinates with selectable units"
 
 import clr
 from Autodesk.Revit.DB import *

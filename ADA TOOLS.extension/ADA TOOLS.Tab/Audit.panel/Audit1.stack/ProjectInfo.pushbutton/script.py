@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Count Views and Placed Views
-This script counts total views in the project and views placed on sheets.
+"""
+Report file-level information about the current project: document
+title, full path and file name, file size, and - if the model is
+workshared - the central model's file name and size.
+
+Results are printed to the pyRevit console and exported to a CSV
+file (Audit_Project_Information.csv).
 """
 
 __title__ = "Project Info"
 __author__ = "Almog Davidson"
-__doc__ = """General Audit Information about the current Revit project."""
 
 from pyrevit import revit, DB, script, forms
 import os

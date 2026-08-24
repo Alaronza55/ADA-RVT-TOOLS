@@ -1,4 +1,15 @@
 # -*- coding: utf-8 -*-
+"""
+Audit CAD imports/links and Revit links together: for each, report
+its load status (Loaded, Unloaded, Not Found, or IMPORTED for a CAD
+file brought in rather than linked) and which view(s) it appears in
+- important because an unloaded or not-found link is easy to miss
+just by looking at the model.
+
+Exported to CSV.
+"""
+__title__ = "Links Audit"
+__author__ = "ADA"
 
 from pyrevit import script, revit, DB, DOCS
 import csv

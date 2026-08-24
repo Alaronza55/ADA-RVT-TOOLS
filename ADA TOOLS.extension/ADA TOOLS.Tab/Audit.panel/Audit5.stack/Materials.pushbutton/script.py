@@ -1,7 +1,10 @@
 """
-List All Materials - OPTIMIZED VERSION
-Shows all materials in the project and identifies which ones are actually used.
-Optimized for performance on large models.
+List every material in the project and flag which ones are actually
+used somewhere in the model (via the element/type Material parameter
+or, for host objects, their compound structure layers) versus loaded
+but unused.
+
+Exported to CSV.
 """
 __title__ = "List Materials"
 __author__ = "Almog Davidson"

@@ -1,5 +1,23 @@
 """
-Select Elements and Get Total Volume
+Select one or more elements (in the current model or in a linked
+model) and get their total volume.
+
+Measurement method, per element:
+1. If the element has a built-in "Volume" parameter with a value
+   greater than 0 (walls, floors, generic models... when "Volumes"
+   is enabled under Area and Volume Computations), that value is
+   used as-is.
+2. Otherwise, the element's solid geometry is collected (recursing
+   into nested geometry instances) and every solid's Volume is
+   summed - i.e. the total volume of all solids that make up the
+   element, not just the first/largest one.
+
+The "Volume" parameter is only populated when volume computation is
+turned on for the project; most elements will fall through to the
+geometry method. See the hover diagram for a visual comparison.
+
+Results are printed per element and as a running total, in cubic
+feet, cubic meters and liters.
 """
 __title__ = "Get Volume"
 __author__ = "ADA"

@@ -1,5 +1,24 @@
 """
-Select Elements and Get Total Surface Area
+Select one or more elements (in the current model or in a linked
+model) and get their total surface area.
+
+Measurement method, per element:
+1. If the element has a built-in "Area" parameter with a value
+   greater than 0 (Rooms, Walls, Floors, Ceilings...), that value is
+   used as-is. Note this is usually a single net face/side area, not
+   the whole envelope.
+2. Otherwise, the element's solid geometry is collected (recursing
+   into nested geometry instances) and the areas of ALL faces of ALL
+   solids are summed - i.e. the total outer surface area of the
+   element (every side: top, bottom, sides, ends), not just one face.
+
+The two methods are not directly comparable: an element measured via
+its "Area" parameter reports one side, while an element measured via
+geometry reports its full envelope. See the hover diagram for a
+visual comparison.
+
+Results are printed per element and as a running total, in square
+feet and square meters.
 """
 __title__ = "Get Surface"
 __author__ = "ADA"

@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Add Multiple Views to a Sheet
-This script adds selected views to a selected sheet at specified positions.
+Place several views onto one sheet in a single pass. Pick a target
+sheet, pick which views to place (any placeable view not already on
+a sheet), set a starting position and spacing, then each view is
+placed as a viewport, stacked vertically downward from that start
+point by (1 foot + spacing) per view.
 """
 __title__ = 'Add Views\nto Sheet'
 __author__ = 'Assistant'
