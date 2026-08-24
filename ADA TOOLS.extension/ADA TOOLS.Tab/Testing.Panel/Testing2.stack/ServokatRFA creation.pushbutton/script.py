@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
-# ACO Servokat GD / SS D400 800x1000 - Revit family generator
+"""
+Generate the ACO Servokat GD/SS D400 800x1000 gully cover family from
+scratch, from geometry hardcoded in this script (extracted from the
+manufacturer's DXF - stock no. 58612, rev 1). Creates a new family
+document from the Metric Generic Model template, builds the frame,
+lid and hinge solids, adds type parameters, and saves the .rfa to a
+fixed local path (OUTPUT_PATH, edit the constant to change it). Not
+family-type-swap like the other Testing tools - this builds the
+family file itself. Can be run from any open document.
+"""
+__title__ = "ACO Servokat GD\nFamily Generator"
+__author__ = "ADA"
 #
 # Source: ACO Industries k.s. drawing, stock no. 58612, rev 1, created 11.12.2009
 #         Title: "ACO Servokat GD 800x1000 standard 1.4301", project D400
-#
-# Run this from pyRevit (IronPython 2.7) or RevitPythonShell in ANY open document.
-# It creates a NEW family document from the Metric Generic Model template,
-# builds the solids, adds the type parameters and saves the .rfa to OUTPUT_PATH.
 #
 # ASCII-only source, IronPython 2 compatible (ADA TOOLS convention).
 #
