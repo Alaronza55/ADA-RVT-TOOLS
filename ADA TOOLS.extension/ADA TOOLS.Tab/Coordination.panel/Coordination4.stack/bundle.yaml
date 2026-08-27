@@ -1,3 +1,4 @@
 layout:
   - ReplaceFamiliesHorizontal
   - ReplaceFamiliesVertical
+  - ColorMEPopeningsByDiscipline

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 TEST VARIANT of Get Surface - measures picked FACES, not elements.
 
