@@ -1,11 +1,11 @@
-"""
+__doc__ = '''
 Color MEP Tags by Linked Model
 Colors duct tags green if their host element is from a linked model containing "HVC"
 Colors pipe tags magenta/pink if their host element is from a linked model containing "BLU"
 Colors pipe tags orange if their host element is from a linked model containing "CLU"
 Colors pipe tags red if their host element is from a linked model containing "EHS"
 Colors electrical tags blue if their host element is from a linked model containing "ELE"
-"""
+'''
 
 __title__ = "Color MEP Tags\nby Linked Model"
 __author__ = "ADA"

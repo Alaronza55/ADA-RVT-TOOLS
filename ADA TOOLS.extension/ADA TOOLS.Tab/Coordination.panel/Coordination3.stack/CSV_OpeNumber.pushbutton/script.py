@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-Select elements in the model whose OPE_NUMBER parameter matches
+__doc__ = """Select elements in the model whose OPE_NUMBER parameter matches
 values listed in a user-provided CSV file.
 
 CSV format: one OPE_NUMBER value per row, no header required.
 A header row is auto-detected and skipped if the first cell is non-numeric.
 
-Compatible with: IronPython 2 / PyRevit
-"""
+Compatible with: IronPython 2 / PyRevit"""
 
 __title__ = "Select by\nOPE_NUMBER"
 __author__ = "ADA"

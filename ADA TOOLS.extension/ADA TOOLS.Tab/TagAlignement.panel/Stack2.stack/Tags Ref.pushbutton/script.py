@@ -1,7 +1,5 @@
-"""
-Draw Cross at Combined Center
-Select multiple labels and draw one red cross at their combined center point
-"""
+__doc__ = """Draw Cross at Combined Center
+Select multiple labels and draw one red cross at their combined center point"""
 __title__ = "Draw Red Cross\nat Combined Center"
 __author__ = "Alaronza"
 

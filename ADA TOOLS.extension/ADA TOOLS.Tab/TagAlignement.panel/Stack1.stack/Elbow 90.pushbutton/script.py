@@ -1,9 +1,7 @@
-"""
-Select tags with a leader and square off each leader's elbow: the
+__doc__ = """Select tags with a leader and square off each leader's elbow: the
 elbow point is moved to (X of the leader end, Y of the leader start)
 - turning a diagonal leader into a clean 90-degree bend (horizontal
-from the tag, then vertical to the element).
-"""
+from the tag, then vertical to the element)."""
 
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI.Selection import ObjectType

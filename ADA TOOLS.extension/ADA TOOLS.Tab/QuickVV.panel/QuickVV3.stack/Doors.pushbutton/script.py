@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-Pick a floor, then pick a door: the floor's thickness (from its
+__doc__ = """Pick a floor, then pick a door: the floor's thickness (from its
 compound structure) is written to the door's "BES_RESA_Under Door"
 parameter (positive value) and to its "Sill Height" parameter
-(negative value, i.e. the door sits recessed by that thickness).
-"""
+(negative value, i.e. the door sits recessed by that thickness)."""
 __title__ = "Floor Thickness\nto Door"
 __author__ = "ADA"
 

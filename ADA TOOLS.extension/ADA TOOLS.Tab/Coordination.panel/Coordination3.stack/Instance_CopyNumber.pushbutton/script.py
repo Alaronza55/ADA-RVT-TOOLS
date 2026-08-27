@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-Copy Generic Model elements from a linked model into the active
+__doc__ = """Copy Generic Model elements from a linked model into the active
 document, based on a single OPE_NUMBER value you type in.
 
 Type an OPE_NUMBER, pick which loaded link to search, and every
 Generic Model in that link whose OPE_NUMBER matches (instance or
 type parameter) is copied into the active document at its linked
 position. Same idea as "CSV Copy Number", but for one value at a
-time instead of a batch from a file.
-"""
+time instead of a batch from a file."""
 __title__ = "Instance Copy\nNumber"
 __author__ = "ADA"
 

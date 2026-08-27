@@ -1,4 +1,4 @@
-"""Count Groups and Assemblies
+__doc__ = """Count Groups and Assemblies
 Displays the total number of Groups and Assemblies in the current project and exports to CSV."""
 
 __title__ = "Count Groups\nand Assemblies"

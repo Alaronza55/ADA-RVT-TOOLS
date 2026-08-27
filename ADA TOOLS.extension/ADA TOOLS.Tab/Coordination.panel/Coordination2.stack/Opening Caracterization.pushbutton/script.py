@@ -1,13 +1,11 @@
-"""
-Openings Caracterization
+__doc__ = """Openings Caracterization
 Finds all generic models with "RESA" or "Opening" in type name
 - Sets their absolute bottom elevation (relative to Survey Point Z coordinate) 
   to OPE_ABSOLUTE LEVEL parameter
 - Assigns sequential numbers (1 to N) to OPE_NUMBER parameter based on distance 
   from origin (bigger to smaller), skipping elements that already have a number
 Uses actual geometry (not bounding box) for precise elevation calculation
-Works with metric units (meters)
-"""
+Works with metric units (meters)"""
 
 __title__ = "Openings\nCaracterization"
 __author__ = "ADA"

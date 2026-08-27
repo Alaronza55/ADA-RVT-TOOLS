@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Align the bottom elevation of pipes to a reference pipe.
+__doc__ = """Align the bottom elevation of pipes to a reference pipe.
 
 Workflow:
     1. Pick one REFERENCE pipe -> its bottom elevation is computed
@@ -10,8 +10,7 @@ Workflow:
 
 Notes:
     - Insulation is hosted on the pipe, so it follows automatically.
-    - Sloped pipes are aligned on their LOWEST point (flagged in the report).
-"""
+    - Sloped pipes are aligned on their LOWEST point (flagged in the report)."""
 
 __title__ = "Align Pipe\nBottoms"
 __author__ = "ADA TOOLS"

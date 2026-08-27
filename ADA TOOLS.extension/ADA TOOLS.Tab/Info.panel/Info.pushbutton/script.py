@@ -1,9 +1,7 @@
-"""
-Hello, this extension aims to help BIM COORDINATORS in their job. You will
+__doc__ = """Hello, this extension aims to help BIM COORDINATORS in their job. You will
 find here some precious and timesaving functions to optimize your work.
 Hope you find them useful. Don't hesitate to report any bugs or ask for
-some new features here : dalmog.dav@gmail.com
-"""
+some new features here : dalmog.dav@gmail.com"""
 __title__ = "Info"
 __author__ = "ADA"
 

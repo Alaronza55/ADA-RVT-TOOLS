@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Toggle Base Points and Site Visibility
+__doc__ = """Toggle Base Points and Site Visibility
 Toggles visibility of Project Base Point, Survey Point, and Site in the active view.
-Note: Internal Origin cannot be controlled via visibility settings in the API.
-"""
+Note: Internal Origin cannot be controlled via visibility settings in the API."""
 __title__ = 'Toggle\nBase Points'
 __author__ = "ADA"
 

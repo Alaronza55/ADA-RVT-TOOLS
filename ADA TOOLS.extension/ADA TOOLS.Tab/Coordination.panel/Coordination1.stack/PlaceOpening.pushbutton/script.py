@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Place a structural opening (BES_RESA family) where an MEP element
+__doc__ = """Place a structural opening (BES_RESA family) where an MEP element
 crosses a structural element, both selected inside linked models.
 
 Step 1: select a structural element in a link (beam, column, wall,
@@ -16,8 +15,7 @@ rotated to align with the MEP element's direction. For round MEP
 elements, a fixed 30mm clearance offset is added on top of the
 diameter and insulation thickness. If no matching BES_RESA type is
 found, or the MEP shape isn't round/rectangular, you are prompted to
-pick a family type to place instead.
-"""
+pick a family type to place instead."""
 
 __title__ = 'Place\nOpening'
 __author__ = "ADA"

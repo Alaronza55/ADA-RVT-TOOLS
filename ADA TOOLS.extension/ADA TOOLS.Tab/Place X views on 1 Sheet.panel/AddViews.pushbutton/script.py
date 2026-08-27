@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Place several views onto one sheet in a single pass. Pick a target
+__doc__ = """Place several views onto one sheet in a single pass. Pick a target
 sheet, pick which views to place (any placeable view not already on
 a sheet), set a starting position and spacing, then each view is
 placed as a viewport, stacked vertically downward from that start
-point by (1 foot + spacing) per view.
-"""
+point by (1 foot + spacing) per view."""
 __title__ = 'Add Views\nto Sheet'
 __author__ = 'Assistant'
 

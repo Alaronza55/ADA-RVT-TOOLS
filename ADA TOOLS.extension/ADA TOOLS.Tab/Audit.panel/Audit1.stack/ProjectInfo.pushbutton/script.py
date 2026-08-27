@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-Report file-level information about the current project: document
+__doc__ = """Report file-level information about the current project: document
 title, full path and file name, file size, and - if the model is
 workshared - the central model's file name and size.
 
 Results are printed to the pyRevit console and exported to a CSV
-file (Audit_Project_Information.csv).
-"""
+file (Audit_Project_Information.csv)."""
 
 __title__ = "Project Info"
 __author__ = "Almog Davidson"

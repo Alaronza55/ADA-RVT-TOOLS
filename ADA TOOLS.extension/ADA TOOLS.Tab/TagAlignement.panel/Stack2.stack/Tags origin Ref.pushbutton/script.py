@@ -1,7 +1,5 @@
-"""
-Draw Cross at Origin
-Creates two perpendicular annotation lines intersecting at 0,0,0 in a family document
-"""
+__doc__ = """Draw Cross at Origin
+Creates two perpendicular annotation lines intersecting at 0,0,0 in a family document"""
 __title__ = "Draw Cross\nat Origin"
 __author__ = "Alaronza"
 

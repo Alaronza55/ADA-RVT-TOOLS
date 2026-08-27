@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-Count every model element (excluding element types) in the project,
+__doc__ = """Count every model element (excluding element types) in the project,
 grouped by category, sorted highest count first.
 
 Results are printed to the pyRevit console and exported to a CSV
 file - a quick way to see what dominates the model (e.g. how many
-walls vs. generic models vs. pipes) without opening a schedule.
-"""
+walls vs. generic models vs. pipes) without opening a schedule."""
 
 __title__ = "Categories Audit"
 __author__ = "Almog Davidson"

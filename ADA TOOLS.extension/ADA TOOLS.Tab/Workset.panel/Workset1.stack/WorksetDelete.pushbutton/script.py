@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Lists worksets with element counts and allows deletion of elements in selected worksets.
-"""
+__doc__ = """Lists worksets with element counts and allows deletion of elements in selected worksets."""
 __title__ = 'Workset\nElements Delete'
 __author__ = 'ADA'
 

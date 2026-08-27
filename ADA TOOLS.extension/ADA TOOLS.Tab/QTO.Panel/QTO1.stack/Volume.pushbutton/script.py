@@ -1,5 +1,4 @@
-"""
-Select one or more elements (in the current model or in a linked
+__doc__ = """Select one or more elements (in the current model or in a linked
 model) and get their total volume.
 
 Measurement method, per element:
@@ -17,8 +16,7 @@ turned on for the project; most elements will fall through to the
 geometry method. See the hover diagram for a visual comparison.
 
 Results are printed per element and as a running total, in cubic
-feet, cubic meters and liters.
-"""
+feet, cubic meters and liters."""
 __title__ = "Get Volume"
 __author__ = "ADA"
 

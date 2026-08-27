@@ -1,12 +1,10 @@
-"""
-List every line pattern in the project and flag whether it looks
+__doc__ = """List every line pattern in the project and flag whether it looks
 built-in or imported/custom - based on its Element ID (negative or
 low IDs, and known built-in names like "Dash", "Dot"... are treated
 as built-in; higher/unrecognized IDs are flagged as imported). This
 is a heuristic, not a guaranteed classification.
 
-Exported automatically to a CSV file.
-"""
+Exported automatically to a CSV file."""
 __title__ = "Export Line Patterns\nwith Import Status"
 __author__ = "Almog Davidson"
 

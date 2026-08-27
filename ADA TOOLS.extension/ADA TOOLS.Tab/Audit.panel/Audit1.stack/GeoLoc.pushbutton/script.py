@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-Report the project's three coordinate systems side by side: the
+__doc__ = """Report the project's three coordinate systems side by side: the
 Project Base Point, the Survey/Shared Point, and the Internal Origin
 (project position at world XYZ(0,0,0)) - each with North/South,
 East/West, Elevation and angle-to-true-north.
 
 You are prompted for a display unit (meters, centimeters or
 millimeters; Revit's internal feet are converted). Results are
-printed to the pyRevit output window and also exported to a CSV file.
-"""
+printed to the pyRevit output window and also exported to a CSV file."""
 __title__ = "Get Project\nCoordinates"
 __author__ = "ADA"
 

@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-On a sheet, pick one or more viewports and hide their crop region
+__doc__ = """On a sheet, pick one or more viewports and hide their crop region
 visibility (the black boundary rectangle around each view), without
-affecting the view's actual crop extents.
-"""
+affecting the view's actual crop extents."""
 __title__ = "Hide\nCrop Region"
 __author__ = "ADA"
 

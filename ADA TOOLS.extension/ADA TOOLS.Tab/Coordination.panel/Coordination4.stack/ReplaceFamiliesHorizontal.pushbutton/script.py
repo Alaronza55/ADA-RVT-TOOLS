@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Replace every instance of 'BES_RESA_CIRC: BES_RESA CIRC HORIZONTAL'
+__doc__ = """Replace every instance of 'BES_RESA_CIRC: BES_RESA CIRC HORIZONTAL'
 in the active view with 'BES_Opening_Horizontal-circular', placing
 the new instance at the old one's actual geometry center (computed
 from its solid geometry, not just its insertion point) so the
-replacement lines up exactly with the opening it's replacing.
-"""
+replacement lines up exactly with the opening it's replacing."""
 
 __title__ = 'Replace & Align\nCircular Openings'
 __author__ = "ADA"

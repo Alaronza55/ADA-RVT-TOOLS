@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-Generate the ACO Servokat GD/SS D400 800x1000 gully cover family from
+__doc__ = """Generate the ACO Servokat GD/SS D400 800x1000 gully cover family from
 scratch, from geometry hardcoded in this script (extracted from the
 manufacturer's DXF - stock no. 58612, rev 1). Creates a new family
 document from the Metric Generic Model template, builds the frame,
 lid and hinge solids, adds type parameters, and saves the .rfa to a
 fixed local path (OUTPUT_PATH, edit the constant to change it). Not
 family-type-swap like the other Testing tools - this builds the
-family file itself. Can be run from any open document.
-"""
+family file itself. Can be run from any open document."""
 __title__ = "ACO Servokat GD\nFamily Generator"
 __author__ = "ADA"
 #

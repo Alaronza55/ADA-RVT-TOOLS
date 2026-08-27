@@ -1,5 +1,4 @@
-"""
-Select one or more elements (in the current model or in a linked
+__doc__ = """Select one or more elements (in the current model or in a linked
 model) and get their total length.
 
 Measurement method, per element, tried in order until one succeeds:
@@ -24,8 +23,7 @@ selection can mix measurement methods too. See the hover diagram for
 a visual comparison of methods 1 and 3, the two most common.
 
 Results are printed per element and as a running total, in feet,
-meters and millimeters.
-"""
+meters and millimeters."""
 __title__ = "Get Length"
 __author__ = "ADA"
 

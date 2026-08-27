@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-Set OPE_ABSOLUTE LEVEL for nested void generic model families
+__doc__ = """Set OPE_ABSOLUTE LEVEL for nested void generic model families
 and BES_Lintel Absolute for nested structural framing families.
-Only processes elements in the active view with family name containing "BES_Opening + Lintel".
-"""
+Only processes elements in the active view with family name containing "BES_Opening + Lintel"."""
 
 __title__ = "Nested Void\nAbsolute Level"
 __author__ = "BESIX"

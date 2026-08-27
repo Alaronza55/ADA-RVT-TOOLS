@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-Select one or more elements, either in the current model or inside a
-linked model, and print the Element ID of each selected element.
-"""
+__doc__ = """Select one or more elements, either in the current model or inside a
+linked model, and print the Element ID of each selected element."""
 __title__ = "List\nElement IDs"
 __author__ = "ADA"
 

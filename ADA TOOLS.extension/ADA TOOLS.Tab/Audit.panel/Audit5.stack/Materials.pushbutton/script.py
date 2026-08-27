@@ -1,11 +1,9 @@
-"""
-List every material in the project and flag which ones are actually
+__doc__ = """List every material in the project and flag which ones are actually
 used somewhere in the model (via the element/type Material parameter
 or, for host objects, their compound structure layers) versus loaded
 but unused.
 
-Exported to CSV.
-"""
+Exported to CSV."""
 __title__ = "List Materials"
 __author__ = "Almog Davidson"
 

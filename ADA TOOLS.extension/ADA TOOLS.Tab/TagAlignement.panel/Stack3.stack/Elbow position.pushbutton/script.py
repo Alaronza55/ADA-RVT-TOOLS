@@ -1,7 +1,5 @@
-"""
-Tag Leader Alignment
-Aligns tag leaders to a vertical detail line with user-defined offset
-"""
+__doc__ = """Tag Leader Alignment
+Aligns tag leaders to a vertical detail line with user-defined offset"""
 __title__ = "Align Tag\nLeaders to Line"
 __author__ = "Alaronza"
 

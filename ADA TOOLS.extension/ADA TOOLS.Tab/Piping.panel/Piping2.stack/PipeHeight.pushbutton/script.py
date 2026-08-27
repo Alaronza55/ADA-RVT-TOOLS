@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Align the centerline of a first picked pipe to the centerline Z of a second
+__doc__ = """Align the centerline of a first picked pipe to the centerline Z of a second
 picked pipe, evaluated at the exact 2D (X,Y) intersection of the two centerlines.
 
 Both pipes may be sloped: the first pipe is translated purely along Z, so its
 slope, length and direction are preserved. Only its elevation changes.
 
 ADA TOOLS - Coordination
-IronPython 2 / Revit API
-"""
+IronPython 2 / Revit API"""
 
 __title__ = "Align Pipe Z\nat XY Cross"
 __author__ = "ADA"

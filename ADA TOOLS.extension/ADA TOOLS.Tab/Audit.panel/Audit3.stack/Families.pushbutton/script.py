@@ -1,11 +1,9 @@
-"""
-Count loadable vs. in-place families in the project, and how many of
+__doc__ = """Count loadable vs. in-place families in the project, and how many of
 the loadable families actually have an instance placed somewhere -
 i.e. how many are loaded but unused.
 
 Results (loadable, in-place, placed, unplaced counts) are printed to
-the pyRevit console and exported to CSV.
-"""
+the pyRevit console and exported to CSV."""
 __title__ = "Count Loadable\nFamilies"
 __author__ = "ADA"
 

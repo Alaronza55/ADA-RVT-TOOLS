@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-List all user worksets, pick one or more, choose whether to search
+__doc__ = """List all user worksets, pick one or more, choose whether to search
 the entire model or just the active view, then select every element
-belonging to the chosen workset(s). Requires a workshared model.
-"""
+belonging to the chosen workset(s). Requires a workshared model."""
 
 __title__ = "Select by\nWorkset"
 __author__ = "ADA Tools"

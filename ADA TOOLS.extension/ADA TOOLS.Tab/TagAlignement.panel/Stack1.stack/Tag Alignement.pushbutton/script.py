@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Align a batch of tags to a reference Detail Line: pick one detail
+__doc__ = """Align a batch of tags to a reference Detail Line: pick one detail
 line in the active view, then pick the tags to align. Each tag's
 head position is snapped onto the line (keeping the tag's own
 elevation/Z), so a scattered set of tags ends up lined up straight
-along whatever line you drew as a guide.
-"""
+along whatever line you drew as a guide."""
 __title__ = "Select Detail Line"
 
 from pyrevit import revit, DB, UI

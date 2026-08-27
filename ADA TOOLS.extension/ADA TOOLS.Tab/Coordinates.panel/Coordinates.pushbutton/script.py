@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-Report the Project Base Point and the Survey/Shared Point - each
+__doc__ = """Report the Project Base Point and the Survey/Shared Point - each
 with North/South, East/West, Elevation and angle-to-true-north - in
 a display unit you choose (meters, centimeters or millimeters).
 Printed to the pyRevit output window only (see "Get Project
 Coordinates" in the Audit panel for a version that also reports the
-Internal Origin and exports to CSV).
-"""
+Internal Origin and exports to CSV)."""
 __title__ = "Get Project\nCoordinates"
 __author__ = "ADA"
 

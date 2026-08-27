@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Count Model Elements by Phase
+__doc__ = """Count Model Elements by Phase
 Lists all phases in the project and counts model elements in each phase.
 Exports results to CSV file."""
 

@@ -1,10 +1,8 @@
-"""
-Openings Absolute Level
+__doc__ = """Openings Absolute Level
 Calculates the absolute bottom elevation (relative to Survey Point Z coordinate) 
 for all generic models in the active view and sets it to OPE_ABSOLUTE LEVEL parameter
 Uses actual geometry (not bounding box) for precise elevation calculation
-Works with metric units (meters)
-"""
+Works with metric units (meters)"""
 
 __title__ = "Openings\nAbsolute Level"
 __author__ = "ADA"

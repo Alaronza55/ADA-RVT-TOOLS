@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Match Pipe Insulation Thickness.
+__doc__ = """Match Pipe Insulation Thickness.
 
 Pick a source element (pipe, pipe fitting or pipe accessory), read its
 insulation thickness, then pick one or several target elements and apply the
 same thickness to them.
 
 If a target has no insulation yet, it is created using the source's
-insulation type.
-"""
+insulation type."""
 
 __title__ = "Match\nInsulation"
 __author__ = "ADA TOOLS"

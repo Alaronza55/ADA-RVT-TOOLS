@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-List every Generic Model instance in the project (family name, type
+__doc__ = """List every Generic Model instance in the project (family name, type
 name, Element ID) and export it to a CSV file - useful for auditing
 what generic-model content (openings, placeholders, custom families)
-exists across the whole model.
-"""
+exists across the whole model."""
 
 __title__ = "Generic Models Export"
 __author__ = "Almog Davidson"
