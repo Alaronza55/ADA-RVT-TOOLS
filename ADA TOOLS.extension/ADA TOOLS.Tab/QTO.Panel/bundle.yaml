@@ -1,3 +1,5 @@
 layout:
   - QTO1
+  - LengthCurve
   - SurfaceTest
+  - ClearMarkers
