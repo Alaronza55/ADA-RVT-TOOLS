@@ -5,6 +5,9 @@ __doc__ = "Colors generic model tags in the active view based on the host's OPE_
 import System
 from pyrevit import revit, DB, script
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 output = script.get_output()
 
 # ── Color map ─────────────────────────────────────────────────────────────────
@@ -125,14 +128,15 @@ with revit.Transaction("Color Tags by OPE_DISCIPLINE"):
             errors.append(u"Tag {}: {}".format(tag.Id.IntegerValue, str(ex)))
 
 # ── Report ────────────────────────────────────────────────────────────────────
-output.print_md("### Color Tags by Discipline — Done")
-output.print_md(u"- **Colored:** {}".format(colored))
-output.print_md(u"- **Skipped:** {}".format(skipped))
+report = ADAReport(__title__.replace(chr(10), " "))
+report.success(u"Colored: <b>{}</b>".format(colored))
+report.line(u"Skipped: <b>{}</b>".format(skipped))
 if skipped_details:
-    output.print_md("#### Skip reasons")
+    report.subheader("Skip Reasons")
     for d in skipped_details:
-        output.print_md(u"- " + d)
+        report.warn(d)
 if errors:
-    output.print_md("### Errors")
+    report.subheader("Errors")
     for e in errors:
-        output.print_md(u"- " + e)
+        report.error(e)
+report.flush()

@@ -29,6 +29,9 @@ from Snippets._vectors import rotate_vector
 from Snippets._views import SectionGenerator
 from GUI.forms import select_from_dict
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 
 # ╦  ╦╔═╗╦═╗╦╔═╗╔╗ ╦  ╔═╗╔═╗
 # ╚╗╔╝╠═╣╠╦╝║╠═╣╠╩╗║  ║╣ ╚═╗
@@ -451,9 +454,9 @@ t.Commit() #🔒
 
 try:
     #👀 DISPLAY TABLE
-    output.print_table(table_data=table_data,
-                       title="New Sections",
-                       columns=["Category","Unique ID","Schedule Level","Element", "Elevation"])
+    report = ADAReport(__title__)
+    report.table(["Category", "Unique ID", "Schedule Level", "Element", "Elevation"], table_data)
+    report.flush()
 except:
     if EXEC_PARAMS.debug_mode:
         import traceback

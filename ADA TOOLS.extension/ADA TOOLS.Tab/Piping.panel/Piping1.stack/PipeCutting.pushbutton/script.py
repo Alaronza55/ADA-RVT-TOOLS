@@ -17,9 +17,13 @@ from Autodesk.Revit.Exceptions import OperationCanceledException
 
 from pyrevit import revit, script
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 output = script.get_output()
+report = ADAReport(__title__.replace(chr(10), " "))
 
 TOL = 1e-9
 END_MARGIN = 1e-4          # feet: keep the break point off the exact endpoints
@@ -92,12 +96,14 @@ except OperationCanceledException:
 
 link_inst = doc.GetElement(face_ref.ElementId)
 if not isinstance(link_inst, RevitLinkInstance):
-    output.print_md("**Error:** the picked reference is not a linked element.")
+    report.error("The picked reference is not a linked element.")
+    report.flush()
     script.exit()
 
 link_doc = link_inst.GetLinkDocument()
 if link_doc is None:
-    output.print_md("**Error:** the linked model is not loaded.")
+    report.error("The linked model is not loaded.")
+    report.flush()
     script.exit()
 
 link_tf = link_inst.GetTotalTransform()
@@ -111,15 +117,17 @@ opt.DetailLevel = ViewDetailLevel.Fine
 faces = []
 collect_planar_faces(linked_elem.get_Geometry(opt), faces)
 if not faces:
-    output.print_md("**Error:** no planar faces found on the picked element.")
+    report.error("No planar faces found on the picked element.")
+    report.flush()
     script.exit()
 
 # Resolve which face was clicked (work in the linked model's coordinates)
 pt_link = link_tf.Inverse.OfPoint(face_ref.GlobalPoint)
 face, dist = find_face_at_point(faces, pt_link)
 if face is None or dist is None or dist > FACE_HIT_TOL:
-    output.print_md("**Error:** could not resolve a flat face at the picked "
-                    "point. Pick a planar face (not a curved surface).")
+    report.error("Could not resolve a flat face at the picked point. "
+                  "Pick a planar face (not a curved surface).")
+    report.flush()
     script.exit()
 
 # Build the cut plane in host coordinates
@@ -171,10 +179,13 @@ try:
     t.Commit()
 except Exception as ex:
     t.RollBack()
-    output.print_md("**Aborted:** {}".format(ex))
+    report.error("Aborted: {}".format(ex))
+    report.flush()
     script.exit()
 
-output.print_md(
-    "**Done.** Cut **{0}** pipe(s) &nbsp;|&nbsp; skipped {1} "
-    "(no crossing / not straight) &nbsp;|&nbsp; failed {2}."
-    .format(cut, skipped, failed))
+report.subheader("Result")
+report.success("Cut <b>{0}</b> pipe(s)".format(cut))
+report.line("Skipped: <b>{0}</b> (no crossing / not straight)".format(skipped))
+if failed:
+    report.warn("Failed: <b>{0}</b>".format(failed))
+report.flush()

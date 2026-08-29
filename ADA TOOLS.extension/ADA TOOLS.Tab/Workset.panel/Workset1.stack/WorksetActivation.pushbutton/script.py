@@ -3,20 +3,35 @@ __title__ = "Workset Visibility"
 __doc__ = "Show or hide worksets in the active view"
 
 from pyrevit import forms, revit, DB, script
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# the my_WPF base class (see lib/GUI/WPF_Base.py) that every other ADA-Tools
+# popup window uses for its dark/gold look - inheriting from it and calling
+# add_wpf_resource() pulls in lib/GUI/Resources/WPF_styles.xaml, which styles
+# Button/CheckBox/TextBox/ListBox/ScrollBar implicitly (no XAML needed here).
+from GUI.ReportTheme import ADAReport, THEME_BG, THEME_ROW_BG, THEME_GOLD, THEME_GOLD_DARK, THEME_TEXT
+from GUI.forms import my_WPF
 from System.Collections.Generic import List
 from System.Collections.ObjectModel import ObservableCollection
 from System.Windows import Window, MessageBox
 from System.Windows.Controls import (
-    TextBox, ListBox, Button, StackPanel, DockPanel, 
+    TextBox, ListBox, Button, StackPanel, DockPanel,
     SelectionMode, TextBlock, Grid, RowDefinition, ColumnDefinition,
     CheckBox, ScrollBarVisibility
 )
 from System.Windows.Data import Binding
 from System.Windows.Input import KeyEventArgs, Key
+from System.Windows.Media import SolidColorBrush, ColorConverter, LinearGradientBrush, GradientStop
 from System import Windows
 
 doc = revit.doc
 uidoc = revit.uidoc
+
+
+def theme_brush(hex_color):
+    """Build a SolidColorBrush from a '#RRGGBB' string (same palette as
+    lib/GUI/ReportTheme.py / WPF_styles.xaml)."""
+    return SolidColorBrush(ColorConverter.ConvertFromString(hex_color))
 
 class WorksetItemUI:
     """UI wrapper for workset with checkbox"""
@@ -32,80 +47,166 @@ class WorksetItemUI:
     def __str__(self):
         return "{} [{}]".format(self.name.replace("_", " ", 1), self.visibility_status)
 
-class WorksetVisibilityWindow(Window):
-    """Main window for workset visibility management"""
-    
+class WorksetVisibilityWindow(my_WPF):
+    """Main window for workset visibility management - themed to match
+    the rest of ADA-Tools (dark/gold, borderless with a custom header),
+    via the shared my_WPF base and WPF_styles.xaml resource dictionary."""
+
     def __init__(self, workset_items, view_name):
         self.all_worksets = workset_items
         self.filtered_worksets = list(workset_items)
         self.action = None
         self.selected_worksets = []
         self.view_name = view_name
-        
+
         # Window setup
         self.Title = "Workset Visibility Manager - {}".format(view_name)
         self.Width = 520
-        self.Height = 650
-        self.MinHeight = 400
+        self.Height = 700
+        self.MinHeight = 450
         self.MinWidth = 450
         self.WindowStartupLocation = Windows.WindowStartupLocation.CenterScreen
         self.SizeToContent = Windows.SizeToContent.Manual
-        
+
+        # Same theme as every other ADA-Tools popup (SelectFromDict,
+        # SelectFromButtons...): borderless window, own dark background,
+        # WPF_styles.xaml pulled in for implicit Button/CheckBox/TextBox/
+        # ListBox/ScrollBar styling.
+        # "None" is a Python keyword, so the WindowStyle.None enum member
+        # has to be reached via getattr rather than dotted attribute access.
+        self.WindowStyle = getattr(Windows.WindowStyle, "None")
+        self.AllowsTransparency = True
+        self.add_wpf_resource()
+
+        gradient = LinearGradientBrush()
+        gradient.StartPoint = Windows.Point(0, 1)
+        gradient.EndPoint = Windows.Point(1, 0)
+        gradient.GradientStops.Add(GradientStop(ColorConverter.ConvertFromString(THEME_BG), 0))
+        gradient.GradientStops.Add(GradientStop(ColorConverter.ConvertFromString(THEME_ROW_BG), 1))
+        self.Background = gradient
+
         # Create UI
         self._create_ui()
-        
+
     def _create_ui(self):
         """Create the user interface"""
         # Main grid with rows
         main_grid = Grid()
         main_grid.Margin = Windows.Thickness(0)
-        
-        # Define rows
+
+        # Define rows - header/footer added on top of the original 4 rows
+        header_row = RowDefinition()
+        header_row.Height = Windows.GridLength(25)  # Header - fixed
+
         row0 = RowDefinition()
         row0.Height = Windows.GridLength(50)  # Search box - fixed
-        
+
         row1 = RowDefinition()
         row1.Height = Windows.GridLength(40)  # Toggle buttons - fixed
-        
+
         row2 = RowDefinition()
         row2.Height = Windows.GridLength(1, Windows.GridUnitType.Star)  # List - flexible
-        
+
         row3 = RowDefinition()
         row3.Height = Windows.GridLength(60)  # Action buttons - fixed
-        
+
+        footer_row = RowDefinition()
+        footer_row.Height = Windows.GridLength(25)  # Footer - fixed
+
+        main_grid.RowDefinitions.Add(header_row)
         main_grid.RowDefinitions.Add(row0)
         main_grid.RowDefinitions.Add(row1)
         main_grid.RowDefinitions.Add(row2)
         main_grid.RowDefinitions.Add(row3)
-        
+        main_grid.RowDefinitions.Add(footer_row)
+
+        # --- Header: ADA-Tools logo + title + Close button (same layout
+        # as SelectFromButtons/SelectFromDict) --------------------------
+        header_grid = Grid()
+        header_grid.Background = theme_brush(THEME_BG)
+        header_grid.MouseDown += self.header_drag
+
+        col_logo = ColumnDefinition()
+        col_logo.Width = Windows.GridLength(75)
+        col_title = ColumnDefinition()
+        col_close = ColumnDefinition()
+        col_close.Width = Windows.GridLength(60)
+        header_grid.ColumnDefinitions.Add(col_logo)
+        header_grid.ColumnDefinitions.Add(col_title)
+        header_grid.ColumnDefinitions.Add(col_close)
+
+        logo_text = TextBlock()
+        logo_text.Text = "ADA-Tools"
+        logo_text.FontWeight = Windows.FontWeights.Heavy
+        logo_text.FontSize = 14
+        logo_text.Margin = Windows.Thickness(5, 0, 0, 0)
+        logo_text.VerticalAlignment = Windows.VerticalAlignment.Center
+        logo_text.Foreground = theme_brush(THEME_TEXT)
+        Grid.SetColumn(logo_text, 0)
+        header_grid.Children.Add(logo_text)
+
+        title_text = TextBlock()
+        title_text.Text = "Workset Visibility Manager"
+        title_text.VerticalAlignment = Windows.VerticalAlignment.Center
+        title_text.HorizontalAlignment = Windows.HorizontalAlignment.Center
+        title_text.Foreground = theme_brush(THEME_TEXT)
+        Grid.SetColumn(title_text, 1)
+        header_grid.Children.Add(title_text)
+
+        close_button = Button()
+        close_button.Content = "Close"
+        close_button.Width = 60
+        close_button.Height = 20
+        close_button.FontSize = 10
+        close_button.VerticalAlignment = Windows.VerticalAlignment.Center
+        close_button.HorizontalAlignment = Windows.HorizontalAlignment.Right
+        close_button.Click += self._on_cancel_click
+        Grid.SetColumn(close_button, 2)
+        header_grid.Children.Add(close_button)
+
+        Grid.SetRow(header_grid, 0)
+        main_grid.Children.Add(header_grid)
+
+        # Small subtitle with the active view name, since the header
+        # itself has no room for a long dynamic title
+        view_label = TextBlock()
+        view_label.Text = "View: {}".format(self.view_name)
+        view_label.Foreground = theme_brush(THEME_GOLD)
+        view_label.FontSize = 11
+        view_label.Margin = Windows.Thickness(10, 2, 10, 0)
+        view_label.VerticalAlignment = Windows.VerticalAlignment.Top
+        Grid.SetRow(view_label, 1)
+        main_grid.Children.Add(view_label)
+
         # Search box panel
         search_panel = DockPanel()
-        search_panel.Margin = Windows.Thickness(10, 10, 10, 5)
-        search_panel.VerticalAlignment = Windows.VerticalAlignment.Top
-        
+        search_panel.Margin = Windows.Thickness(10, 18, 10, 5)
+        search_panel.VerticalAlignment = Windows.VerticalAlignment.Bottom
+
         search_label = TextBlock()
         search_label.Text = "Search:"
+        search_label.Foreground = theme_brush(THEME_GOLD)
         search_label.VerticalAlignment = Windows.VerticalAlignment.Center
         search_label.Margin = Windows.Thickness(0, 0, 10, 0)
         DockPanel.SetDock(search_label, Windows.Controls.Dock.Left)
         search_panel.Children.Add(search_label)
-        
+
         self.search_box = TextBox()
         self.search_box.VerticalAlignment = Windows.VerticalAlignment.Center
         self.search_box.Height = 25
         self.search_box.TextChanged += self._on_search_changed
         self.search_box.KeyDown += self._on_key_down
         search_panel.Children.Add(self.search_box)
-        
-        Grid.SetRow(search_panel, 0)
+
+        Grid.SetRow(search_panel, 1)
         main_grid.Children.Add(search_panel)
-        
+
         # Toggle buttons panel
         toggle_panel = StackPanel()
         toggle_panel.Orientation = Windows.Controls.Orientation.Horizontal
         toggle_panel.HorizontalAlignment = Windows.HorizontalAlignment.Left
         toggle_panel.Margin = Windows.Thickness(10, 0, 10, 5)
-        
+
         toggle_all_button = Button()
         toggle_all_button.Content = "Toggle All"
         toggle_all_button.Width = 100
@@ -113,7 +214,7 @@ class WorksetVisibilityWindow(Window):
         toggle_all_button.Margin = Windows.Thickness(0, 0, 5, 0)
         toggle_all_button.Click += self._on_toggle_all
         toggle_panel.Children.Add(toggle_all_button)
-        
+
         disable_all_button = Button()
         disable_all_button.Content = "Disable All"
         disable_all_button.Width = 100
@@ -121,28 +222,30 @@ class WorksetVisibilityWindow(Window):
         disable_all_button.Margin = Windows.Thickness(5, 0, 0, 0)
         disable_all_button.Click += self._on_disable_all
         toggle_panel.Children.Add(disable_all_button)
-        
-        Grid.SetRow(toggle_panel, 1)
+
+        Grid.SetRow(toggle_panel, 2)
         main_grid.Children.Add(toggle_panel)
-        
+
         # Workset list with checkboxes
         self.workset_listbox = ListBox()
         self.workset_listbox.SelectionMode = SelectionMode.Single
         self.workset_listbox.Margin = Windows.Thickness(10, 5, 10, 10)
         self.workset_listbox.VerticalAlignment = Windows.VerticalAlignment.Stretch
         self.workset_listbox.HorizontalAlignment = Windows.HorizontalAlignment.Stretch
+        self.workset_listbox.Background = theme_brush(THEME_BG)
+        self.workset_listbox.BorderBrush = theme_brush(THEME_GOLD_DARK)
         self._update_listbox()
-        
-        Grid.SetRow(self.workset_listbox, 2)
+
+        Grid.SetRow(self.workset_listbox, 3)
         main_grid.Children.Add(self.workset_listbox)
-        
+
         # Action button panel
         button_panel = StackPanel()
         button_panel.Orientation = Windows.Controls.Orientation.Horizontal
         button_panel.HorizontalAlignment = Windows.HorizontalAlignment.Center
         button_panel.VerticalAlignment = Windows.VerticalAlignment.Center
         button_panel.Margin = Windows.Thickness(10, 5, 10, 10)
-        
+
         self.show_button = Button()
         self.show_button.Content = "Show Checked"
         self.show_button.Width = 120
@@ -150,7 +253,7 @@ class WorksetVisibilityWindow(Window):
         self.show_button.Margin = Windows.Thickness(5, 0, 5, 0)
         self.show_button.Click += self._on_show_click
         button_panel.Children.Add(self.show_button)
-        
+
         self.hide_button = Button()
         self.hide_button.Content = "Hide Checked"
         self.hide_button.Width = 120
@@ -158,7 +261,7 @@ class WorksetVisibilityWindow(Window):
         self.hide_button.Margin = Windows.Thickness(5, 0, 5, 0)
         self.hide_button.Click += self._on_hide_click
         button_panel.Children.Add(self.hide_button)
-        
+
         cancel_button = Button()
         cancel_button.Content = "Cancel"
         cancel_button.Width = 80
@@ -166,13 +269,28 @@ class WorksetVisibilityWindow(Window):
         cancel_button.Margin = Windows.Thickness(5, 0, 5, 0)
         cancel_button.Click += self._on_cancel_click
         button_panel.Children.Add(cancel_button)
-        
-        Grid.SetRow(button_panel, 3)
+
+        Grid.SetRow(button_panel, 4)
         main_grid.Children.Add(button_panel)
-        
+
+        # --- Footer: version, matching the other ADA-Tools windows -----
+        footer_grid = Grid()
+        footer_grid.Background = theme_brush(THEME_BG)
+
+        footer_text = TextBlock()
+        footer_text.Text = "ADA-Tools - Workset Visibility"
+        footer_text.Foreground = theme_brush(THEME_GOLD_DARK)
+        footer_text.FontSize = 10
+        footer_text.HorizontalAlignment = Windows.HorizontalAlignment.Center
+        footer_text.VerticalAlignment = Windows.VerticalAlignment.Center
+        footer_grid.Children.Add(footer_text)
+
+        Grid.SetRow(footer_grid, 5)
+        main_grid.Children.Add(footer_grid)
+
         # Set content
         self.Content = main_grid
-        
+
         # Focus search box
         self.Loaded += self._on_loaded
     
@@ -345,12 +463,21 @@ def main():
         with revit.Transaction("Change Workset Visibility"):
             for workset_item in selected_worksets:
                 workset_id = workset_item.id
-                
+
                 if action == "show":
                     active_view.SetWorksetVisibility(workset_id, DB.WorksetVisibility.Visible)
 
                 elif action == "hide":
                     active_view.SetWorksetVisibility(workset_id, DB.WorksetVisibility.Hidden)
+
+        report = ADAReport(__title__)
+        report.success("{} workset(s) set to <b>{}</b> in view <b>{}</b>.".format(
+            len(selected_worksets), action, active_view.Name))
+        report.table(
+            ["Workset"],
+            [[w.name] for w in selected_worksets]
+        )
+        report.flush()
 
 if __name__ == "__main__":
     main()

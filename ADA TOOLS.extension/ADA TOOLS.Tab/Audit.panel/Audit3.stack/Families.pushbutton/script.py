@@ -11,6 +11,9 @@ from pyrevit import revit, DB
 import os
 import csv
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 folder_name = doc.Title
 
@@ -59,6 +62,18 @@ print("  - In-Place Families: {}".format(total_in_place))
 print("  - Placed Loadable Families: {}".format(total_placed))
 print("  - Unplaced Loadable Families: {}".format(total_unplaced))
 print("")
+
+report = ADAReport(__title__.replace(chr(10), " "))
+report.table(
+    ["Metric", "Count"],
+    [
+        ["Loadable Families", str(total_loadable)],
+        ["In-Place Families", str(total_in_place)],
+        ["Placed Loadable Families", str(total_placed)],
+        ["Unplaced Loadable Families", str(total_unplaced)],
+    ]
+)
+report.flush()
 
 # Export to CSV
 def export_to_csv():
@@ -147,8 +162,15 @@ def export_to_csv():
 
         print("Details CSV exported successfully to: {}".format(details_filepath))
 
+        ADAReport(__title__.replace(chr(10), " ")) \
+            .success("Summary CSV exported to: <b>{}</b>".format(summary_filepath)) \
+            .success("Details CSV exported to: <b>{}</b>".format(details_filepath)) \
+            .flush()
+
     except Exception as e:
         print("Error exporting CSV files: {}".format(str(e)))
+        ADAReport(__title__.replace(chr(10), " ")).error(
+            "Error exporting CSV files: {}".format(str(e))).flush()
 
 # Call the export function
 export_to_csv()

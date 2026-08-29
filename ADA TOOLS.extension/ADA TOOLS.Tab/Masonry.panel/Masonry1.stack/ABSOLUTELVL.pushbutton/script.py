@@ -16,6 +16,9 @@ from Autodesk.Revit.DB import (
 from pyrevit import revit, DB, forms
 import sys
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 
@@ -142,6 +145,8 @@ def main():
     lintel_error = 0
     lintel_no_param = 0
 
+    report = ADAReport(__title__.replace(chr(10), " "))
+
     t = Transaction(doc, "Set Absolute Levels for Opening + Lintel families")
     t.Start()
 
@@ -165,7 +170,7 @@ def main():
                         param_ope.Set(abs_z)
                         void_success += 1
                     except Exception as e:
-                        print("OPE set error on {}: {}".format(elem.Id, str(e)))
+                        report.warn("OPE set error on element ID <b>{}</b>: {}".format(elem.Id, str(e)))
                         void_error += 1
                 else:
                     void_error += 1
@@ -189,7 +194,7 @@ def main():
                 try:
                     param_lintel_host.Set(lintel_z)
                 except Exception as e:
-                    print("Lintel host set error on {}: {}".format(elem.Id, str(e)))
+                    report.warn("Lintel host set error on element ID <b>{}</b>: {}".format(elem.Id, str(e)))
                     lintel_error += 1
 
             # Set on nested sub-element
@@ -203,15 +208,27 @@ def main():
                     param_lintel_sub.Set(lintel_z)
                     lintel_success += 1
                 except Exception as e:
-                    print("Lintel sub set error on {}: {}".format(sub_elem.Id, str(e)))
+                    report.warn("Lintel sub set error on element ID <b>{}</b>: {}".format(sub_elem.Id, str(e)))
                     lintel_error += 1
 
         t.Commit()
 
     except Exception as e:
         t.RollBack()
+        report.error("Transaction failed: {}".format(e))
+        report.flush()
         forms.alert("Transaction failed: {}".format(str(e)))
         sys.exit()
+
+    report.subheader("Summary")
+    report.table(
+        ["Parameter", "Updated", "Errors", "Missing param"],
+        [
+            ["OPE_ABSOLUTE LEVEL", str(void_success), str(void_error), str(void_no_param)],
+            ["BES_Lintel Absolute", str(lintel_success), str(lintel_error), str(lintel_no_param)],
+        ]
+    )
+    report.flush()
 
     msg = (
         "Done!\n\n"

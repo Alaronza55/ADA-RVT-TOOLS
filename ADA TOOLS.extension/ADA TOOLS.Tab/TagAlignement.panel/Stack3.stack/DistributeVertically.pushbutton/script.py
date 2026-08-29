@@ -11,6 +11,9 @@ from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, forms, script
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 
@@ -188,7 +191,9 @@ def distribute_tags_vertically(tags, line, place_right):
     # Start transaction
     t = Transaction(doc, "Distribute Tags Vertically")
     t.Start()
-    
+
+    report = ADAReport(__title__.replace(chr(10), " "))
+
     try:
         for i, tag in enumerate(sorted_tags):
             if is_2d:
@@ -227,19 +232,24 @@ def distribute_tags_vertically(tags, line, place_right):
                         
                 except Exception as e:
                     # Some tags might not support all leader operations
-                    print("Could not set leader for tag {}: {}".format(
+                    report.warn("Could not set leader for tag <b>{}</b>: {}".format(
                         tag.Id.IntegerValue, str(e)
                     ))
-        
+
         t.Commit()
-        
+
+        report.success("Successfully distributed <b>{}</b> tags vertically.".format(len(sorted_tags)))
+        report.flush()
+
         forms.alert(
             "Successfully distributed {} tags vertically.".format(len(sorted_tags)),
             title="Success"
         )
-    
+
     except Exception as e:
         t.RollBack()
+        report.error("Error distributing tags: {}".format(str(e)))
+        report.flush()
         forms.alert(
             "Error distributing tags: {}".format(str(e)),
             title="Error"

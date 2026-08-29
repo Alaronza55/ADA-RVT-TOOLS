@@ -17,6 +17,9 @@ __author__ = "ADA"
 from pyrevit import revit, DB, forms
 import os
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 # Get current document
 doc = revit.doc
 folder_name = doc.Title
@@ -897,11 +900,19 @@ def main():
         message += "- Nested Elements: Checks parent element properties when child element has no level\n\n"
         message += "The CSV file can be opened in Excel or any spreadsheet application."
 
+        report = ADAReport(__title__.replace(chr(10), " "))
+        report.success("Export completed successfully!")
+        report.line("File saved to: <b>{}</b>".format(file_path))
+        report.line("Total elements exported: <b>{}</b>".format(len(data)))
+        report.flush()
+
         forms.alert(message)
 
     except Exception as e:
         forms.alert("Error creating CSV file: {}".format(str(e)))
         print("Detailed error: {}".format(str(e)))
+        ADAReport(__title__.replace(chr(10), " ")).error(
+            "Error creating CSV file: {}".format(str(e))).flush()
 
 if __name__ == "__main__":
     main()

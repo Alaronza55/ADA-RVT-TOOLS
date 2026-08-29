@@ -18,9 +18,13 @@ from Autodesk.Revit.DB.Plumbing import PipeInsulation
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 logger = script.get_logger()
+report = ADAReport(__title__.replace(chr(10), " "))
 
 FT_TO_MM = 304.8
 
@@ -88,6 +92,8 @@ except OperationCanceledException:
 
 source_ins = get_insulation(source)
 if source_ins is None:
+    report.error("{} has no insulation.".format(describe(source)))
+    report.flush()
     forms.alert(
         "{} has no insulation.".format(describe(source)),
         title="Match Insulation",
@@ -97,6 +103,11 @@ if source_ins is None:
 thickness = source_ins.Thickness # internal units (feet)
 ins_type_id = source_ins.GetTypeId()
 ins_type_name = DB.Element.Name.GetValue(doc.GetElement(ins_type_id))
+
+report.subheader("Source Insulation")
+report.line("Source: <b>{}</b>".format(describe(source)))
+report.line("Type: <b>{}</b>".format(ins_type_name))
+report.line("Thickness: <b>{:.1f} mm</b>".format(thickness * FT_TO_MM))
 
 forms.alert(
     "Source insulation:\n\n"
@@ -153,5 +164,13 @@ if failed:
     msg += "\nFailed: {}".format(len(failed))
     for elem, err in failed:
         logger.warning("%s -> %s", describe(elem), err)
+
+report.subheader("Result")
+report.success("Thickness applied: <b>{:.1f} mm</b>".format(thickness * FT_TO_MM))
+report.line("Updated: <b>{}</b> / Created: <b>{}</b>".format(updated, created))
+if failed:
+    report.warn("Failed: <b>{}</b>".format(len(failed)))
+    report.table(["Element", "Error"], [[describe(elem), err] for elem, err in failed])
+report.flush()
 
 forms.alert(msg, title="Match Insulation")

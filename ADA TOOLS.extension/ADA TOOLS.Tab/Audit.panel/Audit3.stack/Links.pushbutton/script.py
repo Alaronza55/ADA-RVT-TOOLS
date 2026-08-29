@@ -13,6 +13,9 @@ from pyrevit import script, revit, DB, DOCS
 import csv
 import os
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = DOCS.doc
 folder_name = doc.Title
 
@@ -472,17 +475,12 @@ def check_model():
             link_csv_data.append(row_data)
 
     # Display tables
-    output.print_md("## CAD Instances Audit")
-    output.print_table(table_data=cad_table_data,
-                      title="",
-                      columns=cad_row_head,
-                      formats=['', '', '', '', '', '', ''])
+    report = ADAReport(__title__)
+    report.subheader("CAD Instances Audit")
+    report.table(cad_row_head, cad_table_data)
 
-    output.print_md("## Revit Links Audit")
-    output.print_table(table_data=link_table_data,
-                      title="",
-                      columns=link_row_head,
-                      formats=['', '', '', '', '', ''])
+    report.subheader("Revit Links Audit")
+    report.table(link_row_head, link_table_data)
 
     # Export to CSV files
     output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
@@ -514,6 +512,12 @@ def check_model():
         print("CAD instances: Found {} unique CAD files with {} total instances".format(len(cad_groups) if cad_instances else 0, len(cad_instances)))
         print("Revit links: Found {} instances".format(len(revit_links)))
 
+        report.subheader("Summary")
+        report.success("Audit completed.")
+        report.line("CAD instances: found <b>{}</b> unique CAD files with <b>{}</b> total instances".format(
+            len(cad_groups) if cad_instances else 0, len(cad_instances)))
+        report.line("Revit links: found <b>{}</b> instances".format(len(revit_links)))
+
         # Print CAD duplicate summary
         if cad_instances:
             duplicates = [name for name, cads in cad_groups.items() if len(cads) > 1]
@@ -521,6 +525,8 @@ def check_model():
                 print("CAD duplicates found:")
                 for dup_name in duplicates:
                     print("  '{}' appears {} times".format(dup_name, len(cad_groups[dup_name])))
+                report.warn("CAD duplicates found: " + "; ".join(
+                    "'{}' appears {} times".format(name, len(cad_groups[name])) for name in duplicates))
             else:
                 print("No CAD duplicates found.")
 
@@ -530,13 +536,23 @@ def check_model():
             print("\nWARNING: {} links could not be identified (showing as UnknownLink_xxx)".format(len(unknown_links)))
             print("These links may be unloaded, not found, or have corrupted data.")
             print("Consider reloading these links or checking their status in the model.")
+            report.warn(
+                "{} link(s) could not be identified (showing as UnknownLink_xxx). "
+                "They may be unloaded, not found, or have corrupted data - consider "
+                "reloading them or checking their status in the model.".format(len(unknown_links)))
 
         print("\nCAD CSV exported to: {}".format(cad_csv_filepath))
         print("Revit Links CSV exported to: {}".format(link_csv_filepath))
 
+        report.line("CAD CSV exported to: <b>{}</b>".format(cad_csv_filepath))
+        report.line("Revit Links CSV exported to: <b>{}</b>".format(link_csv_filepath))
+        report.flush()
+
     except Exception as e:
         print("Error exporting CSV: {}".format(str(e)))
         print("Data collected but could not save to file.")
+        report.error("Error exporting CSV: {} (data collected but could not save to file)".format(e))
+        report.flush()
 
 # Run the check
 if __name__ == "__main__":

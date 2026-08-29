@@ -13,6 +13,9 @@ from Autodesk.Revit.DB.Structure import StructuralType
 from pyrevit import revit, DB
 import math
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 active_view = doc.ActiveView
@@ -100,12 +103,16 @@ def main():
     # Define target family name (assuming any type from this family)
     target_family_name = "BES_Opening_Vertical-circular"
     
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.line("Source: <b>{} : {}</b>".format(source_family_name, source_type_name))
+    report.line("Target family: <b>{}</b>".format(target_family_name))
+
     print("\n" + "="*60)
     print("Starting replacement process...")
     print("Source: {} : {}".format(source_family_name, source_type_name))
     print("Target family: {}".format(target_family_name))
     print("="*60 + "\n")
-    
+
     # Get all family instances in active view
     collector = FilteredElementCollector(doc, active_view.Id)\
         .OfClass(FamilyInstance)\
@@ -124,26 +131,36 @@ def main():
                 instance.Id, family_name, type_name))
     
     print("\nTotal source instances found: {}".format(len(source_instances)))
-    
+    report.line("Total source instances found: <b>{}</b>".format(len(source_instances)))
+
     if not source_instances:
+        report.warn("No instances of '{}:{}' found in active view.".format(
+            source_family_name, source_type_name))
         print("\nNo instances of '{}:{}' found in active view.".format(
             source_family_name, source_type_name))
         print("\nListing all family instances in view for reference:")
-        
+
         collector = FilteredElementCollector(doc, active_view.Id)\
             .OfClass(FamilyInstance)\
             .WhereElementIsNotElementType()
-        
+
         families_found = {}
         for instance in collector:
             fam = instance.Symbol.Family.Name
             typ = instance.Symbol.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
             key = "{} : {}".format(fam, typ)
             families_found[key] = families_found.get(key, 0) + 1
-        
+
         for key in sorted(families_found.keys()):
             print("  {} ({} instances)".format(key, families_found[key]))
-        
+
+        if families_found:
+            report.subheader("Family Instances In View")
+            report.table(
+                ["Family : Type", "Instances"],
+                [[key, str(families_found[key])] for key in sorted(families_found.keys())]
+            )
+        report.flush()
         return
     
     # Find target family symbol (any type from the target family)
@@ -163,14 +180,22 @@ def main():
             break
     
     if not target_symbol:
+        report.error("Target family '{}' not found!".format(target_family_name))
         print("\nERROR: Target family '{}' not found!".format(target_family_name))
         print("\nListing all families in project containing 'Opening' or 'BES':")
-        
+
+        candidates = []
         for symbol in all_symbols:
             fam = symbol.Family.Name
             if 'opening' in fam.lower() or 'bes' in fam.lower():
                 typ = symbol.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
                 print("  {} : {}".format(fam, typ))
+                candidates.append([fam, typ])
+
+        if candidates:
+            report.subheader("Candidate Families In Project")
+            report.table(["Family", "Type"], candidates)
+        report.flush()
         return
     
     # Start transaction
@@ -422,11 +447,12 @@ def main():
                 
             except Exception as e:
                 print("  ERROR: Failed - {}".format(str(e)))
+                report.warn("Instance ID <b>{}</b> failed: {}".format(instance.Id, str(e)))
                 failed_count += 1
                 continue
-        
+
         t.Commit()
-        
+
         # Show results
         print("\n" + "="*60)
         print("REPLACEMENT COMPLETED")
@@ -435,12 +461,20 @@ def main():
         if failed_count > 0:
             print("Failed: {} instances".format(failed_count))
         print("="*60 + "\n")
-        
+
+        report.subheader("Summary")
+        report.success("Successfully replaced: <b>{}</b> instances".format(replaced_count))
+        if failed_count > 0:
+            report.warn("Failed: <b>{}</b> instances".format(failed_count))
+        report.flush()
+
     except Exception as e:
         t.RollBack()
         print("\nERROR: Transaction failed: {}".format(str(e)))
         import traceback
         traceback.print_exc()
+        report.error("Transaction failed: {}".format(e))
+        report.flush()
 
 
 if __name__ == '__main__':

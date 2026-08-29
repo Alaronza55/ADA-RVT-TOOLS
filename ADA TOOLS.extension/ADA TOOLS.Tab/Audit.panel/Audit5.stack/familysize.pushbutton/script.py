@@ -12,6 +12,9 @@ import os
 import tempfile
 import csv
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 __title__ = "Family Sizes"
 __author__ = "Almog Davidson"
 
@@ -89,7 +92,7 @@ print("=" * 100)
 
 for i, fam in enumerate(family_data[:10], 1):
     print("{}. {:<35} {:<20} {:>10.2f} MB ({} types) [{}]".format(
-        i, fam['Family Name'][:35], fam['Category'][:20], 
+        i, fam['Family Name'][:35], fam['Category'][:20],
         fam['Size (MB)'], fam['Number of Types'], fam['Placed in Project']
     ))
 
@@ -100,6 +103,26 @@ unplaced_count = len(family_data) - placed_count
 print("\nTotal: {} families | {:.2f} MB".format(len(family_data), total_mb))
 print("Placed: {} | Not Placed: {}".format(placed_count, unplaced_count))
 
+report = ADAReport(__title__)
+report.subheader("All Families (sorted by size)")
+report.table(
+    ["Family Name", "Category", "Size (KB)", "Types", "Placed"],
+    [[f['Family Name'], f['Category'], "{:.2f}".format(f['Size (KB)']),
+      str(f['Number of Types']), f['Placed in Project']] for f in family_data]
+)
+
+report.subheader("Top 10 Largest Families")
+report.table(
+    ["#", "Family Name", "Category", "Size (MB)", "Types", "Placed"],
+    [[str(i), fam['Family Name'], fam['Category'], "{:.2f}".format(fam['Size (MB)']),
+      str(fam['Number of Types']), fam['Placed in Project']]
+     for i, fam in enumerate(family_data[:10], 1)]
+)
+
+report.subheader("Summary")
+report.line("Total: <b>{} families</b> | <b>{:.2f} MB</b>".format(len(family_data), total_mb))
+report.line("Placed: <b>{}</b> | Not placed: <b>{}</b>".format(placed_count, unplaced_count))
+
 # Export to CSV
 folder_name = doc.Title
 output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TESTING UCB\00 Model Checker\{}".format(folder_name)
@@ -108,10 +131,10 @@ output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TEST
 if not os.path.exists(output_folder):
     try:
         os.makedirs(output_folder)
-        print("**Created folder:** `{}`".format(output_folder))
+        report.line("Created folder: <b>{}</b>".format(output_folder))
     except Exception as e:
-        print("**Error creating folder:** {}".format(str(e)))
-        print("**Attempting to save to default location...**")
+        report.warn("Error creating folder: {}".format(str(e)))
+        report.warn("Attempting to save to default location...")
         output_folder = os.path.expanduser("~\\Desktop")
 
 # Save detailed element breakdown
@@ -141,5 +164,12 @@ try:
     print(filepath_detailed)
     print("=" * 100)
 
+    report.subheader("CSV Export")
+    report.success("CSV exported successfully to: <b>{}</b>".format(filepath_detailed))
+    report.flush()
+
 except Exception as e:
     print("\nError exporting CSV: {}".format(str(e)))
+    report.subheader("CSV Export - ERROR")
+    report.error("Error exporting CSV: {}".format(str(e)))
+    report.flush()

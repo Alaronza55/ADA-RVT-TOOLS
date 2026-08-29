@@ -31,6 +31,9 @@ from Autodesk.Revit.Exceptions import OperationCanceledException
 
 from pyrevit import revit, forms, script
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 output = script.get_output()
@@ -233,24 +236,16 @@ def main():
         )
 
     pt = result["point"]
-    output.print_md("### Pipe centerline aligned")
-    output.print_md(
-        "- Moved: {}".format(output.linkify(pipe_a.Id, title=str(pipe_a.Id)))
-    )
-    output.print_md(
-        "- Reference: {}".format(output.linkify(pipe_b.Id, title=str(pipe_b.Id)))
-    )
-    output.print_md(
-        "- Crossing point (X, Y): {:.1f} , {:.1f} mm".format(
-            to_mm(pt.X), to_mm(pt.Y)
-        )
-    )
-    output.print_md(
-        "- Z before: {:.1f} mm / Z target: {:.1f} mm".format(
-            to_mm(result["z_a"]), to_mm(result["z_b"])
-        )
-    )
-    output.print_md("- Vertical shift applied: **{:+.1f} mm**".format(to_mm(dz)))
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.subheader("Pipe Centerline Aligned")
+    report.line("Moved: {}".format(report.link(pipe_a.Id)))
+    report.line("Reference: {}".format(report.link(pipe_b.Id)))
+    report.line("Crossing point (X, Y): <b>{:.1f} , {:.1f} mm</b>".format(
+        to_mm(pt.X), to_mm(pt.Y)))
+    report.line("Z before: <b>{:.1f} mm</b> / Z target: <b>{:.1f} mm</b>".format(
+        to_mm(result["z_a"]), to_mm(result["z_b"])))
+    report.success("Vertical shift applied: <b>{:+.1f} mm</b>".format(to_mm(dz)))
+    report.flush()
 
 
 main()

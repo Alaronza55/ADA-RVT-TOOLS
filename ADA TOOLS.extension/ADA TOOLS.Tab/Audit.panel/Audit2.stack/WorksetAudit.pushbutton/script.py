@@ -16,6 +16,9 @@ import re
 import csv
 import codecs
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 # Get current document
 doc = revit.doc
 
@@ -480,7 +483,7 @@ def Workset_Audit():
     results_workset = []
     detailed_elements = {}  # Dictionary to store detailed element info for each workset
 
-    print("=== WORKSETS IN CURRENT PROJECT ===")
+    report = ADAReport(__title__)
 
     if worksets:
         workset_list = list(worksets)
@@ -488,10 +491,7 @@ def Workset_Audit():
         # Sort worksets by name
         workset_list.sort(key=lambda x: x.Name)
 
-        # Create table header
-        print("{:<30} {:<8} {:<20} {:<10} {:<8} {:<10} {:<12}".format(
-            "Workset Name|", "ID|", "Owner|", "Editable|", "Open|", "Visible|", "Element Count|"
-        ))
+        table_rows = []
 
         # Create table rows
         for workset in workset_list:
@@ -506,15 +506,10 @@ def Workset_Audit():
             element_details, element_count = get_workset_element_details(workset.Id)
             detailed_elements[workset_name] = element_details
 
-            print("{:<30}| {:<8}| {:<20}| {:<10}| {:<8}| {:<10}| {:<12}|".format(
-                workset_name[:29],
-                workset_id,
-                workset_owner[:19],
-                is_editable,
-                is_open,
-                is_visible,
-                str(element_count)
-            ))
+            table_rows.append([
+                workset_name, workset_id, workset_owner,
+                is_editable, is_open, is_visible, str(element_count)
+            ])
 
             # Add to results for CSV export (without truncation)
             results_workset.append([
@@ -527,8 +522,15 @@ def Workset_Audit():
                 element_count
             ])
 
+        report.table(
+            ["Workset Name", "ID", "Owner", "Editable", "Open", "Visible", "Element Count"],
+            table_rows
+        )
+        report.flush()
+
     else:
-        print("No user worksets found in this project.")
+        report.warn("No user worksets found in this project.")
+        report.flush()
         results_workset.append(["No user worksets found in this project.", "", "", "", "", "", ""])
 
     return results_workset, detailed_elements
@@ -579,11 +581,11 @@ def save_to_csv(detailed_elements):
                             unicode(element['element_id'])
                         ])
 
-        print("Detailed CSV report saved to: {}".format(filepath_detailed))
+        ADAReport(__title__).success("Detailed CSV report saved to: <b>{}</b>".format(filepath_detailed)).flush()
         return filepath_detailed
 
     except Exception as e:
-        print("Error saving CSV file: {}".format(str(e)))
+        ADAReport(__title__).error("Error saving CSV file: {}".format(str(e))).flush()
         return None
 
 def clean_text(text):

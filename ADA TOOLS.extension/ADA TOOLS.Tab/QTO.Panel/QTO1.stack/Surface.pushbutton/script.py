@@ -24,6 +24,7 @@ links where Revit's own selection highlight can't show a single
 face.
 """
 __title__ = "Get Surface"
+__version__ = "Version 1.0"
 __author__ = "ADA"
 
 import math
@@ -31,6 +32,11 @@ import math
 from pyrevit import revit, DB, UI
 from pyrevit import forms
 from System.Collections.Generic import List
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# small button-choice popup (see lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_buttons
 
 doc = revit.doc
 uidoc = revit.uidoc
@@ -180,9 +186,11 @@ def find_face_at_point(element, point):
 
 
 try:
-    source = forms.CommandSwitchWindow.show(
+    source = select_from_buttons(
         ["Current Model", "Linked Model"],
-        message="Pick face(s) in:"
+        title=__title__,
+        label="Pick face(s) in:",
+        version=__version__
     )
 
     if not source:
@@ -202,13 +210,12 @@ try:
     if not refs:
         forms.alert("No faces selected.", exitscript=True)
 
+    report = ADAReport(__title__)
+
     total_area = 0.0
     face_details = []
-    markers = []  # list of (tip_point, normal_vector), both in host coords
-
-    print("=" * 70)
-    print("CALCULATING FACE SURFACE AREAS")
-    print("=" * 70)
+    markers = []      # list of (tip_point, normal_vector), both in host coords
+    table_rows = []   # rows for the "Measured Faces" table
 
     for ref in refs:
         is_linked = ref.LinkedElementId != DB.ElementId.InvalidElementId
@@ -237,16 +244,17 @@ try:
                 location_note = "current model"
                 face = element.GetGeometryObjectFromReference(ref)
         except Exception as resolve_err:
-            print("\nElement ID {}: could not resolve picked face ({})".format(
+            report.warn("Element ID <b>{}</b>: could not resolve picked face ({})".format(
                 ref.LinkedElementId.IntegerValue if is_linked else ref.ElementId.IntegerValue,
                 resolve_err))
             continue
 
         if not isinstance(face, DB.Face):
-            print("\nElement ID {} ({}): picked reference resolved to {}, "
-                  "not a face, skipped".format(
-                      display_id, location_note,
-                      type(face).__name__ if face is not None else "None"))
+            report.warn(
+                "Element ID <b>{}</b> ({}): picked reference resolved to {}, "
+                "not a face, skipped".format(
+                    display_id, location_note,
+                    type(face).__name__ if face is not None else "None"))
             continue
 
         area = face.Area
@@ -257,8 +265,8 @@ try:
             'location': location_note
         })
 
-        print("\nElement ID {} ({}): {:.3f} m2".format(
-            display_id, location_note, area * 0.09290304))
+        id_cell = str(display_id) if is_linked else report.link(ref.ElementId, title=str(display_id))
+        table_rows.append([id_cell, location_note, "{:.3f} m2".format(area * 0.09290304)])
 
         # Work out the marker point/normal in host (world) coordinates
         try:
@@ -270,18 +278,19 @@ try:
                 normal_host = face.ComputeNormal(uv)
             markers.append((ref.GlobalPoint, normal_host))
         except Exception as marker_err:
-            print("  (could not compute marker for this face: {})".format(marker_err))
+            report.warn("Could not compute marker for element ID <b>{}</b>: {}".format(
+                display_id, marker_err))
+
+    if table_rows:
+        report.subheader("Measured Faces")
+        report.table(["Element ID", "Location", "Area"], table_rows)
 
     total_area_m2 = total_area * 0.09290304
 
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print("Total faces measured: {}".format(len(face_details)))
-    print("-" * 70)
-    print("TOTAL SURFACE AREA: {:.3f} square feet".format(total_area))
-    print("TOTAL SURFACE AREA: {:.3f} square meters".format(total_area_m2))
-    print("=" * 70)
+    report.subheader("Summary")
+    report.line("Total faces measured: <b>{}</b>".format(len(face_details)))
+    report.line("Total surface area: <b>{:.3f} m2</b> ({:.3f} ft2)".format(
+        total_area_m2, total_area))
 
     # Revit's own selection highlight only renders at whole-element
     # granularity for linked content, no matter how the Reference is
@@ -297,13 +306,17 @@ try:
                 for tip, normal in markers:
                     create_marker(tip, normal)
             uidoc.RefreshActiveView()
-            print("\n{} face marker(s) drawn in the view (yellow arrows).".format(
+            report.success("{} face marker(s) drawn in the view (yellow arrows).".format(
                 len(markers)))
         except Exception as marker_err:
-            print("\nCould not draw face markers: {}".format(marker_err))
+            report.error("Could not draw face markers: {}".format(marker_err))
+
+    report.flush()
 
 except Exception as e:
     if 'cancel' not in str(e).lower():
-        print("Error: {}".format(e))
+        report = report if 'report' in globals() else ADAReport(__title__)
+        report.error("Error: {}".format(e))
+        report.flush()
         import traceback
-        traceback.print_exc()
+        print(traceback.format_exc())

@@ -9,6 +9,9 @@ from pyrevit import forms, script
 import csv
 import os
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = __revit__.ActiveUIDocument.Document
 output = script.get_output()
 
@@ -63,19 +66,18 @@ model_groups = [d for d in csv_data if d[1] == "Model Group"]
 detail_groups = [d for d in csv_data if d[1] == "Detail Group"]
 assemblies_list = [d for d in csv_data if d[1] == "Assembly"]
 
-output.print_md("## Groups and Assemblies Count")
-output.print_md("---")
+report = ADAReport(__title__.replace(chr(10), " "))
 
-output.print_md("### Groups")
-print("Total Groups: {}".format(len(groups)))
-print("  - Model Groups: {}".format(len(model_groups)))
-print("  - Detail Groups: {}".format(len(detail_groups)))
+report.subheader("Groups")
+report.line("Total Groups: <b>{}</b>".format(len(groups)))
+report.line("Model Groups: <b>{}</b>".format(len(model_groups)))
+report.line("Detail Groups: <b>{}</b>".format(len(detail_groups)))
 
-output.print_md("\n### Assemblies")
-print("Total Assemblies: {}".format(len(assemblies_list)))
+report.subheader("Assemblies")
+report.line("Total Assemblies: <b>{}</b>".format(len(assemblies_list)))
 
-output.print_md("\n---")
-output.print_md("**Grand Total: {}**".format(len(csv_data)))
+report.subheader("Grand Total")
+report.line("<b>{}</b>".format(len(csv_data)))
 
 # Export to CSV - ALWAYS export, even if empty
 folder_name = doc.Title
@@ -85,10 +87,10 @@ output_folder = r"C:\Users\adavidson\OneDrive - BESIX\ADA BESIX\Audit Model\TEST
 if not os.path.exists(output_folder):
     try:
         os.makedirs(output_folder)
-        print("**Created folder:** `{}`".format(output_folder))
+        report.line("Created folder: <b>{}</b>".format(output_folder))
     except Exception as e:
-        print("**Error creating folder:** {}".format(str(e)))
-        print("**Attempting to save to default location...**")
+        report.warn("Error creating folder: {}".format(str(e)))
+        report.warn("Attempting to save to default location...")
         output_folder = os.path.expanduser("~\\Desktop")
 
 # Create filename with project name
@@ -109,16 +111,15 @@ try:
             # Write a note that no groups/assemblies were found
             writer.writerow(['No groups or assemblies found', '', ''])
 
-    output.print_md("\n---")
-    output.print_md("### CSV Export")
-    print("CSV file exported successfully!")
-    print("Location: {}".format(csv_filepath))
+    report.subheader("CSV Export")
+    report.success("CSV file exported successfully!")
+    report.line("Location: <b>{}</b>".format(csv_filepath))
     if not csv_data:
-        print("Note: No groups or assemblies found in the project.")
-    
+        report.warn("No groups or assemblies found in the project.")
+    report.flush()
+
 except Exception as e:
-    output.print_md("\n---")
-    output.print_md("### CSV Export - ERROR")
-    print("Failed to save CSV file!")
-    print("Error: {}".format(str(e)))
-    print("Attempted location: {}".format(csv_filepath))
+    report.subheader("CSV Export - ERROR")
+    report.error("Failed to save CSV file: {}".format(str(e)))
+    report.line("Attempted location: {}".format(csv_filepath))
+    report.flush()

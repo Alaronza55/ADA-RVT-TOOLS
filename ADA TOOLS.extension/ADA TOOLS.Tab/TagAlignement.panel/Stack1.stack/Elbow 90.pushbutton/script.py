@@ -7,6 +7,9 @@ from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI.Selection import ObjectType
 from pyrevit import revit, forms
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 __title__ = 'Set Leader\nElbow'
 __author__ = 'Alaronza'
 
@@ -57,53 +60,55 @@ try:
     success_count = 0
     skipped_count = 0
     error_count = 0
-    
+    report = ADAReport(__title__.replace(chr(10), " "))
+
     try:
         for selection in selections:
             # Get the selected element
             tag = doc.GetElement(selection.ElementId)
-            
+
             # Check if it's a tag with a leader
             if not hasattr(tag, 'HasLeader') or not tag.HasLeader:
-                print('Skipped: Element ID {} is not a tag with a leader.'.format(
+                report.warn('Skipped: Element ID <b>{}</b> is not a tag with a leader.'.format(
                     selection.ElementId))
                 skipped_count += 1
                 continue
-            
+
             # Get leader positions
             leader_end, leader_start, tagged_ref = get_tag_leader_info(tag)
-            
+
             if leader_end is None or leader_start is None or tagged_ref is None:
-                print('Skipped: Tag ID {} does not have a free end leader or leader is not visible.'.format(
+                report.warn('Skipped: Tag ID <b>{}</b> does not have a free end leader or leader is not visible.'.format(
                     selection.ElementId))
                 skipped_count += 1
                 continue
-            
+
             # Create new elbow position: X from leader end, Y from leader start
             new_elbow = XYZ(leader_end.X, leader_start.Y, leader_end.Z)
-            
+
             try:
                 # Set the new leader elbow position using SetLeaderElbow method
                 tag.SetLeaderElbow(tagged_ref, new_elbow)
                 success_count += 1
-                
+
             except Exception as e:
-                print('Error on tag ID {}: {}'.format(selection.ElementId, str(e)))
+                report.error('Error on tag ID <b>{}</b>: {}'.format(selection.ElementId, str(e)))
                 error_count += 1
-        
+
         t.Commit()
-        
+
         # Print summary
-        print('\n' + '='*50)
-        print('SUMMARY')
-        print('='*50)
-        print('Successfully processed: {} tags'.format(success_count))
+        report.subheader("Summary")
+        if success_count > 0:
+            report.success('Successfully processed: <b>{}</b> tags'.format(success_count))
+        else:
+            report.line('Successfully processed: <b>{}</b> tags'.format(success_count))
         if skipped_count > 0:
-            print('Skipped: {} tags (no free end leader or leader not visible)'.format(skipped_count))
+            report.warn('Skipped: <b>{}</b> tags (no free end leader or leader not visible)'.format(skipped_count))
         if error_count > 0:
-            print('Errors: {} tags'.format(error_count))
-        print('='*50)
-        
+            report.error('Errors: <b>{}</b> tags'.format(error_count))
+        report.flush()
+
         if success_count == 0 and skipped_count > 0:
             forms.alert('All selected tags were skipped.\n\n'
                        'Make sure the tags have:\n'

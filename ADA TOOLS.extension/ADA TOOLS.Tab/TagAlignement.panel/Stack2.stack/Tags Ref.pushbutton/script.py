@@ -8,6 +8,9 @@ from Autodesk.Revit.UI.Selection import ObjectType
 from Autodesk.Revit.Exceptions import OperationCanceledException
 from pyrevit import revit, DB, forms
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 
@@ -118,16 +121,23 @@ try:
             pass
     
     t.Commit()
-    
-    print("Created red cross at combined center of {} labels".format(count))
+
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.success("Created red cross at combined center of <b>{}</b> labels.".format(count))
+    if not red_style:
+        report.warn("Could not find a red line style - cross was drawn with the default style.")
+    report.flush()
+
     if red_style:
         forms.alert("Successfully created red cross at the center of {} labels!".format(count))
     else:
         forms.alert("Successfully created cross at the center of {} labels! (Note: Could not find red line style)".format(count))
-        
+
 except Exception as e:
     t.RollBack()
-    print("Error: {}".format(e))
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.error("Error: {}".format(e))
+    report.flush()
     import traceback
     print(traceback.format_exc())
     forms.alert("Error: {}".format(str(e)))

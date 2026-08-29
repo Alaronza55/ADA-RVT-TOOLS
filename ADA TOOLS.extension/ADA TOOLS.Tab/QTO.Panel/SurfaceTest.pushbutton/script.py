@@ -21,11 +21,17 @@ real Model Text turned out to require creating a whole temporary
 family document under the hood, so this sidesteps that entirely).
 """
 __title__ = "Get Surface\n(Test - Plane)"
+__version__ = "Version 1.0"
 __author__ = "ADA"
 
 from pyrevit import revit, DB, UI
 from pyrevit import forms
 from System.Collections.Generic import List
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# small button-choice popup (see lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_buttons
 
 doc = revit.doc
 uidoc = revit.uidoc
@@ -301,9 +307,11 @@ def create_area_digits(centroid, normal, area_m2):
 
 
 try:
-    source = forms.CommandSwitchWindow.show(
+    source = select_from_buttons(
         ["Current Model", "Linked Model"],
-        message="Pick face(s) in:"
+        title=__title__,
+        label="Pick face(s) in:",
+        version=__version__
     )
 
     if not source:
@@ -323,13 +331,12 @@ try:
     if not refs:
         forms.alert("No faces selected.", exitscript=True)
 
+    report = ADAReport(__title__.replace(chr(10), " "))
+
     total_area = 0.0
     face_details = []
-    markers = []  # list of (triangles_host, centroid_host, normal_host, area_ft2)
-
-    print("=" * 70)
-    print("CALCULATING FACE SURFACE AREAS")
-    print("=" * 70)
+    markers = []      # list of (triangles_host, centroid_host, normal_host, area_ft2)
+    table_rows = []   # rows for the "Measured Faces" table
 
     for ref in refs:
         is_linked = ref.LinkedElementId != DB.ElementId.InvalidElementId
@@ -354,16 +361,17 @@ try:
                 location_note = "current model"
                 face = element.GetGeometryObjectFromReference(ref)
         except Exception as resolve_err:
-            print("\nElement ID {}: could not resolve picked face ({})".format(
+            report.warn("Element ID <b>{}</b>: could not resolve picked face ({})".format(
                 ref.LinkedElementId.IntegerValue if is_linked else ref.ElementId.IntegerValue,
                 resolve_err))
             continue
 
         if not isinstance(face, DB.Face):
-            print("\nElement ID {} ({}): picked reference resolved to {}, "
-                  "not a face, skipped".format(
-                      display_id, location_note,
-                      type(face).__name__ if face is not None else "None"))
+            report.warn(
+                "Element ID <b>{}</b> ({}): picked reference resolved to {}, "
+                "not a face, skipped".format(
+                    display_id, location_note,
+                    type(face).__name__ if face is not None else "None"))
             continue
 
         area = face.Area
@@ -374,8 +382,8 @@ try:
             'location': location_note
         })
 
-        print("\nElement ID {} ({}): {:.3f} m2".format(
-            display_id, location_note, area * 0.09290304))
+        id_cell = str(display_id) if is_linked else report.link(ref.ElementId, title=str(display_id))
+        table_rows.append([id_cell, location_note, "{:.3f} m2".format(area * 0.09290304)])
 
         try:
             triangles = face_triangles_host(face, transform)
@@ -400,18 +408,19 @@ try:
 
             markers.append((offset_tris, centroid, normal_host, area * 0.09290304))
         except Exception as marker_err:
-            print("  (could not build plane marker for this face: {})".format(marker_err))
+            report.warn("Could not build plane marker for element ID <b>{}</b>: {}".format(
+                display_id, marker_err))
+
+    if table_rows:
+        report.subheader("Measured Faces")
+        report.table(["Element ID", "Location", "Area"], table_rows)
 
     total_area_m2 = total_area * 0.09290304
 
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print("Total faces measured: {}".format(len(face_details)))
-    print("-" * 70)
-    print("TOTAL SURFACE AREA: {:.3f} square feet".format(total_area))
-    print("TOTAL SURFACE AREA: {:.3f} square meters".format(total_area_m2))
-    print("=" * 70)
+    report.subheader("Summary")
+    report.line("Total faces measured: <b>{}</b>".format(len(face_details)))
+    report.line("Total surface area: <b>{:.3f} m2</b> ({:.3f} ft2)".format(
+        total_area_m2, total_area))
 
     if markers:
         drawn = 0
@@ -426,17 +435,22 @@ try:
                         create_area_digits(centroid, normal, area_m2)
                     except Exception as text_err:
                         text_failed += 1
-                        print("  (could not build 3D area digits: {})".format(text_err))
+                        report.warn("Could not build 3D area digits: {}".format(text_err))
             uidoc.RefreshActiveView()
-            print("\n{} plane marker(s) drawn in the view (orange, 75% opacity).".format(drawn))
+            report.success("{} plane marker(s) drawn in the view (orange, 75% opacity).".format(drawn))
             if text_failed:
-                print("{} of {} 3D area digit label(s) failed to create - see errors above.".format(
-                    text_failed, drawn))
+                report.warn(
+                    "{} of {} 3D area digit label(s) failed to create - see warnings above.".format(
+                        text_failed, drawn))
         except Exception as marker_err:
-            print("\nCould not draw plane markers: {}".format(marker_err))
+            report.error("Could not draw plane markers: {}".format(marker_err))
+
+    report.flush()
 
 except Exception as e:
     if 'cancel' not in str(e).lower():
-        print("Error: {}".format(e))
+        report = report if 'report' in globals() else ADAReport(__title__.replace(chr(10), " "))
+        report.error("Error: {}".format(e))
+        report.flush()
         import traceback
-        traceback.print_exc()
+        print(traceback.format_exc())

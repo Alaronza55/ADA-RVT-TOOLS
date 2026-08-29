@@ -2,19 +2,27 @@
 __doc__ = """Select one or more elements, either in the current model or inside a
 linked model, and print the Element ID of each selected element."""
 __title__ = "List\nElement IDs"
+__version__ = "Version 1.0"
 __author__ = "ADA"
 
 from pyrevit import revit, UI
 from pyrevit import forms
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# small button-choice popup (see lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_buttons
 
 doc = revit.doc
 uidoc = revit.uidoc
 
 try:
     # Ask the user where to pick elements from
-    source = forms.CommandSwitchWindow.show(
+    source = select_from_buttons(
         ["Current Model", "Linked Model"],
-        message="Select elements in:"
+        title=__title__,
+        label="Select elements in:",
+        version=__version__
     )
 
     if not source:
@@ -52,24 +60,21 @@ try:
     if not picked_ids:
         forms.alert("No elements selected.", exitscript=True)
 
-    print("=" * 70)
-    print("SELECTED ELEMENT IDs")
-    print("=" * 70)
+    report = ADAReport(__title__.replace(chr(10), " "))
 
-    entries = []
-    for display_id, link_name in picked_ids:
-        if link_name:
-            entries.append("{} (in link: {})".format(display_id, link_name))
-        else:
-            entries.append(str(display_id))
+    table_rows = [
+        [str(display_id), link_name if link_name else "current model"]
+        for display_id, link_name in picked_ids
+    ]
+    report.table(["Element ID", "Location"], table_rows)
 
-    print("; ".join(entries))
-
-    print("-" * 70)
-    print("Total elements selected: {}".format(len(picked_ids)))
-    print("=" * 70)
+    report.subheader("Summary")
+    report.line("Total elements selected: <b>{}</b>".format(len(picked_ids)))
+    report.flush()
 
 except Exception as e:
-    print("Error: {}".format(e))
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.error("Error: {}".format(e))
+    report.flush()
     import traceback
-    traceback.print_exc()
+    print(traceback.format_exc())

@@ -2,6 +2,7 @@
 """Apply a slope percentage and a slope direction to selected pipes."""
 
 __title__ = "Slope\nPipes"
+__version__ = "Version 1.0"
 __author__ = "ADA TOOLS"
 __doc__ = ("Select one or more pipes, choose the direction the pipes should "
            "fall towards, enter a slope percentage and apply it.")
@@ -9,6 +10,11 @@ __doc__ = ("Select one or more pipes, choose the direction the pipes should "
 import math
 
 from pyrevit import revit, DB, UI, forms, script
+
+# Shared ADA-Tools dark/gold themed report and picker (see lib/GUI/ReportTheme.py,
+# lib/GUI/SelectFromDict.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_dict
 
 doc = revit.doc
 uidoc = revit.uidoc
@@ -181,12 +187,16 @@ pipes = collect_pipes()
 if not pipes:
     forms.alert("No pipe selected. Nothing to do.", exitscript=True)
 
-direction = forms.SelectFromList.show(
+direction = select_from_dict(
     DIRECTION_OPTIONS,
-    title="Slope direction - which way should the pipes fall?",
+    title=__title__,
+    label="Slope direction - which way should the pipes fall?",
     button_name="Continue",
-    multiselect=False
+    version=__version__,
+    SelectMultiple=False
 )
+if direction:
+    direction = direction[0]
 if not direction:
     script.exit()
 
@@ -213,12 +223,16 @@ except ValueError:
     forms.alert("'{0}' is not a valid number.".format(raw_value),
                 exitscript=True)
 
-pivot = forms.SelectFromList.show(
+pivot = select_from_dict(
     PIVOT_OPTIONS,
-    title="Which end keeps its current elevation?",
+    title=__title__,
+    label="Which end keeps its current elevation?",
     button_name="Apply",
-    multiselect=False
+    version=__version__,
+    SelectMultiple=False
 )
+if pivot:
+    pivot = pivot[0]
 if not pivot:
     script.exit()
 
@@ -247,10 +261,8 @@ for pipe in pipes:
 tgroup.Assimilate()
 
 applied = len([row for row in results if row[1] == "Applied"])
-output.print_md("### Pipe slope: {0}% - {1}".format(
-    round(slope_value * 100.0, 4), direction))
-output.print_md("**{0} of {1} pipes updated.**".format(applied, len(pipes)))
-output.print_table(
-    table_data=results,
-    columns=["Pipe", "Result", "Details"]
-)
+report = ADAReport(__title__.replace(chr(10), " "))
+report.subheader("Pipe Slope: {0}% - {1}".format(round(slope_value * 100.0, 4), direction))
+report.success("{0} of {1} pipes updated.".format(applied, len(pipes)))
+report.table(["Pipe", "Result", "Details"], results)
+report.flush()

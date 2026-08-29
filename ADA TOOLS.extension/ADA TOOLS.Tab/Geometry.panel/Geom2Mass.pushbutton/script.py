@@ -6,6 +6,7 @@ IronPython 2 - Revit 2021+
 """
 
 __title__ = "Geo to\nMass"
+__version__ = "Version 1.0"
 __author__ = "ADA"
 __doc__ = ("Select elements (in this model or inside a link) and rebuild their\n"
            "geometry as Mass elements.\n\n"
@@ -38,6 +39,11 @@ from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
 from pyrevit import forms, revit, script
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# small button-choice popup (see lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_buttons
 
 doc = revit.doc
 uidoc = revit.uidoc
@@ -366,9 +372,11 @@ def unhide_mass_category():
 # main
 # ---------------------------------------------------------------------------
 
-source = forms.CommandSwitchWindow.show(
+source = select_from_buttons(
     ['Elements in this model', 'Elements inside a Revit link'],
-    message='Where are the elements?')
+    title=__title__,
+    label='Where are the elements?',
+    version=__version__)
 if not source:
     script.exit()
 
@@ -490,20 +498,20 @@ except Exception as ex:
     forms.alert("Failed, nothing was changed.\n\n{0}".format(ex), exitscript=True)
 
 # --- report ----------------------------------------------------------------
-output.print_md("## Geometry to Mass")
-output.print_md("- Masses created: **{0}**".format(len(created)))
+report = ADAReport(__title__.replace(chr(10), " "))
+report.line("Masses created: <b>{0}</b>".format(len(created)))
 
 if union_report:
     src, res, msh = union_report
     if res == 1:
-        output.print_md("- Union: **{0} solids fused into 1**".format(src))
+        report.line("Union: <b>{0} solids fused into 1</b>".format(src))
     else:
-        output.print_md("- Union: {0} solids reduced to **{1} lumps** "
-                        "(Revit refused the rest - they are still inside the "
-                        "same single element)".format(src, res))
+        report.line("Union: {0} solids reduced to <b>{1} lumps</b> "
+                     "(Revit refused the rest - they are still inside the "
+                     "same single element)".format(src, res))
     if msh:
-        output.print_md("- {0} mesh(es) added un-fused "
-                        "(meshes cannot be booleaned)".format(msh))
+        report.line("{0} mesh(es) added un-fused "
+                     "(meshes cannot be booleaned)".format(msh))
 
 if created:
     ids = List[ElementId]()
@@ -512,15 +520,16 @@ if created:
     uidoc.Selection.SetElementIds(ids)
 
 if skipped:
-    output.print_md("- Skipped (no geometry): **{0}**".format(len(skipped)))
-    for el in skipped[:25]:
-        print(output.linkify(el.Id))
+    report.warn("Skipped (no geometry): <b>{0}</b>".format(len(skipped)))
+    report.line(", ".join(report.link(el.Id) for el in skipped[:25]))
 
 if failed:
-    output.print_md("- Failed: **{0}**".format(len(failed)))
+    report.error("Failed: <b>{0}</b>".format(len(failed)))
     for f in failed[:25]:
-        print(f)
+        report.warn(str(f))
 
 if created and not use_directshape:
-    output.print_md("_Turn on Massing & Site > Show Mass if the new masses "
-                    "are not visible._")
+    report.line("<i>Turn on Massing &amp; Site &gt; Show Mass if the new masses "
+                 "are not visible.</i>")
+
+report.flush()

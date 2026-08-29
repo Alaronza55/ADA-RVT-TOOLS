@@ -4,10 +4,16 @@ the entire model or just the active view, then select every element
 belonging to the chosen workset(s). Requires a workshared model."""
 
 __title__ = "Select by\nWorkset"
+__version__ = "Version 1.0"
 __author__ = "ADA Tools"
 
 from pyrevit import revit, DB, forms, script
 from System.Collections.Generic import List
+
+# Shared ADA-Tools dark/gold themed report and pickers (see lib/GUI/ReportTheme.py,
+# lib/GUI/SelectFromDict.py, lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_dict, select_from_buttons
 
 doc = revit.doc
 uidoc = revit.uidoc
@@ -31,11 +37,13 @@ for ws in worksets:
     ws_map[label] = ws
 
 # --- 3. Ask the user which workset(s) --------------------------------------
-selected = forms.SelectFromList.show(
+selected = select_from_dict(
     sorted(ws_map.keys()),
-    title="Select Workset(s)",
+    title=__title__,
+    label="Select workset(s):",
     button_name="Select Elements",
-    multiselect=True
+    version=__version__,
+    SelectMultiple=True
 )
 
 if not selected:
@@ -45,9 +53,11 @@ if isinstance(selected, str):
     selected = [selected]
 
 # --- 4. Ask for the search scope -------------------------------------------
-scope = forms.CommandSwitchWindow.show(
+scope = select_from_buttons(
     ["Entire Model", "Active View Only"],
-    message="Search scope:"
+    title=__title__,
+    label="Search scope:",
+    version=__version__
 )
 
 if not scope:
@@ -75,6 +85,12 @@ if element_ids.Count == 0:
     script.exit()
 
 uidoc.Selection.SetElementIds(element_ids)
+
+report = ADAReport(__title__.replace(chr(10), " "))
+report.success("<b>{}</b> element(s) selected.".format(element_ids.Count))
+report.line("Scope: <b>{}</b>".format(scope))
+report.table(["Workset"], [[label] for label in selected])
+report.flush()
 
 forms.alert("{} element(s) selected in:\n\n{}".format(
     element_ids.Count, "\n".join(selected)))

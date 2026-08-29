@@ -9,6 +9,10 @@ __author__ = "Almog Davidson"
 
 from Autodesk.Revit.DB import *
 from pyrevit import revit, DB, forms, script
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 # Get current document
 doc = revit.doc
 
@@ -99,23 +103,40 @@ try:
     print("CSV export completed successfully!")
     print("File saved to: {}".format(csv_file_path))
     print("Total generic models exported: {}".format(len(csv_data) - 1))  # -1 for header
-    
+
+    report = ADAReport(__title__)
+    report.table(csv_data[0], [[str(v) for v in row] for row in csv_data[1:]])
+    report.subheader("Summary")
+    report.success("CSV export completed successfully!")
+    report.line("File saved to: <b>{}</b>".format(csv_file_path))
+    report.line("Total generic models exported: <b>{}</b>".format(len(csv_data) - 1))
+    report.flush()
+
 except Exception as e:
     print("Error writing CSV file: {}".format(str(e)))
     # Try alternative path
     try:
         import tempfile
         csv_file_path = os.path.join(tempfile.gettempdir(), 'Generic_Models_Export.csv')
-        
+
         with open(csv_file_path, 'w') as csvfile:
             writer = csv.writer(csvfile)
             for row in csv_data:
                 string_row = [str(item) for item in row]
                 writer.writerow(string_row)
-        
+
         print("CSV export completed successfully (saved to temp folder)!")
         print("File saved to: {}".format(csv_file_path))
         print("Total generic models exported: {}".format(len(csv_data) - 1))
-        
+
+        report = ADAReport(__title__)
+        report.warn("CSV export completed (saved to temp folder, original path failed): {}".format(str(e)))
+        report.line("File saved to: <b>{}</b>".format(csv_file_path))
+        report.line("Total generic models exported: <b>{}</b>".format(len(csv_data) - 1))
+        report.flush()
+
     except Exception as e2:
         print("Failed to save file: {}".format(str(e2)))
+        report = ADAReport(__title__)
+        report.error("Failed to save file: {}".format(str(e2)))
+        report.flush()

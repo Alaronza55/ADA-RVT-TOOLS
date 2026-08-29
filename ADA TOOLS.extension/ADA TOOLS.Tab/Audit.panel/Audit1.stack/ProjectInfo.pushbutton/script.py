@@ -15,6 +15,9 @@ from datetime import datetime
 import re
 import csv
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 # Get the current document
 doc = revit.doc
 
@@ -93,8 +96,16 @@ def project_info():
         results_info.append("File Size: N/A (file not saved)")
 
     # Print to PyRevit output window
+    report = ADAReport(__title__)
     for result in results_info:
-        print("{}".format(result))
+        if result.startswith("==="):
+            report.subheader(result.replace("===", "").strip())
+        elif ":" in result:
+            prop, _, value = result.partition(":")
+            report.line("{}: <b>{}</b>".format(prop.strip(), value.strip()))
+        else:
+            report.line(result)
+    report.flush()
 
     return results_info
 
@@ -147,11 +158,11 @@ def save_to_csv(results_info):
                     # Handle any other format
                     writer.writerow(["Central Model Path", result])
 
-        print("CSV report saved to: {}".format(filepath))
+        ADAReport(__title__).success("CSV report saved to: <b>{}</b>".format(filepath)).flush()
         return filepath
 
     except Exception as e:
-        print("Error saving CSV file: {}".format(str(e)))
+        ADAReport(__title__).error("Error saving CSV file: {}".format(str(e))).flush()
         return None
 
 if __name__ == '__main__':

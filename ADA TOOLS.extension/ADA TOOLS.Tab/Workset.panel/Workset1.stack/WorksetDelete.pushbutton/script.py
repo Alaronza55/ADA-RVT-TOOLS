@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 __doc__ = """Lists worksets with element counts and allows deletion of elements in selected worksets."""
 __title__ = 'Workset\nElements Delete'
+__version__ = "Version 1.0"
 __author__ = 'ADA'
 
 import clr
@@ -21,6 +22,11 @@ from Autodesk.Revit.UI import TaskDialog, TaskDialogCommonButtons, TaskDialogRes
 
 # Import forms
 from pyrevit import forms, revit, script
+
+# Shared ADA-Tools dark/gold themed report and picker (see lib/GUI/ReportTheme.py,
+# lib/GUI/SelectFromDict.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_dict
 
 # Create a logger output
 output = script.get_output()
@@ -59,10 +65,14 @@ workset_data.sort(key=lambda x: x['name'])
 options = ["{} ({} elements)".format(w['name'], w['count']) for w in workset_data]
 
 # Show a form with checkboxes to let the user select worksets
-selected_options = forms.SelectFromList.show(options, 
-                                           title="Select Worksets to Clean",
-                                           button_name="Select Worksets",
-                                           multiselect=True)
+selected_options = select_from_dict(
+    options,
+    title=__title__,
+    label="Select worksets to clean:",
+    button_name="Select Worksets",
+    version=__version__,
+    SelectMultiple=True
+)
 
 # If nothing was selected or the dialog was cancelled, exit
 if not selected_options:
@@ -90,11 +100,10 @@ result = TaskDialog.Show("Confirm Deletion",
 if result == TaskDialogResult.No:
     forms.alert('Operation cancelled.', exitscript=True)
 
-# Print to output window
-output.print_md("# Workset Element Deletion")
-output.print_md("## Processing selected worksets:")
-for name in selected_workset_names:
-    output.print_md("- {}".format(name))
+# Report
+report = ADAReport(__title__.replace(chr(10), " "))
+report.subheader("Processing Selected Worksets")
+report.table(["Workset"], [[name] for name in selected_workset_names])
 
 # Get all elements in the selected worksets
 all_elements = []
@@ -104,7 +113,7 @@ for workset_id in selected_workset_ids:
     elements = FilteredElementCollector(doc).WherePasses(workset_filter).ToElements()
     all_elements.extend(elements)
 
-output.print_md("\n## Found {} total elements in selected worksets".format(len(all_elements)))
+report.line("Found <b>{}</b> total elements in selected worksets".format(len(all_elements)))
 
 # Start a transaction
 t = Transaction(doc, "Delete Elements in Selected Worksets")
@@ -177,29 +186,32 @@ for element in all_elements:
 t.Commit()
 
 # Show detailed results in output window
-output.print_md("\n## Deletion Results:")
-output.print_md("- **{}** elements successfully deleted".format(deleted_count))
-output.print_md("- **{}** elements could not be deleted".format(non_deletable_count))
+report.subheader("Deletion Results")
+report.success("<b>{}</b> elements successfully deleted".format(deleted_count))
+if non_deletable_count:
+    report.warn("<b>{}</b> elements could not be deleted".format(non_deletable_count))
 
 if protected_categories:
-    output.print_md("\n### Protected Categories:")
+    report.subheader("Protected Categories")
     for cat in protected_categories:
-        output.print_md("- {}".format(cat))
+        report.line(cat)
 
 if dependent_elements:
-    output.print_md("\n### Elements with Dependencies:")
+    report.subheader("Elements With Dependencies")
     for cat in dependent_elements:
-        output.print_md("- {}".format(cat))
+        report.line(cat)
 
 if pinned_elements:
-    output.print_md("\n### Pinned Elements:")
+    report.subheader("Pinned Elements")
     for cat in pinned_elements:
-        output.print_md("- {}".format(cat))
+        report.line(cat)
 
 if other_reasons:
-    output.print_md("\n### Other Reasons:")
+    report.subheader("Other Reasons")
     for reason in other_reasons:
-        output.print_md("- {}".format(reason))
+        report.warn(reason)
+
+report.flush()
 
 # Show the results in a dialog
 result_message = "Operation completed:\n\n"

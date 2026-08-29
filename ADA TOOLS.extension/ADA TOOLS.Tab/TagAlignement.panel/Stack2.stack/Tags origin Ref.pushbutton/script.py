@@ -6,6 +6,9 @@ __author__ = "Alaronza"
 from Autodesk.Revit.DB import *
 from pyrevit import revit, DB
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 
 # Check if we're in a family document
@@ -42,9 +45,13 @@ try:
     detail_line_v = doc.FamilyCreate.NewDetailCurve(active_view, line_v)
     
     t.Commit()
-    print("Cross drawn successfully at origin (0,0,0)")
-        
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.success("Cross drawn successfully at origin (0,0,0).")
+    report.flush()
+
 except Exception as e:
     t.RollBack()
-    print("Error: {}".format(e))
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.error("Error: {}".format(e))
+    report.flush()
     TaskDialog.Show("Error", str(e))

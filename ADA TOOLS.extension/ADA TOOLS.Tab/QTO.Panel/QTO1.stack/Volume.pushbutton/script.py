@@ -26,11 +26,17 @@ Results are printed per element and as a running total, in cubic
 feet, cubic meters and liters.
 """
 __title__ = "Get Volume"
+__version__ = "Version 1.0"
 __author__ = "ADA"
 
 from pyrevit import revit, DB, UI
 from pyrevit import forms
 from System.Collections.Generic import List
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# small button-choice popup (see lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_buttons
 
 # Get the active document
 doc = revit.doc
@@ -337,9 +343,11 @@ def create_volume_digits(centroid, facing_normal, volume_m3):
 
 try:
     # Ask the user where to pick elements from
-    source = forms.CommandSwitchWindow.show(
+    source = select_from_buttons(
         ["Current Model", "Linked Model"],
-        message="Select elements in:"
+        title=__title__,
+        label="Select elements in:",
+        version=__version__
     )
 
     if not source:
@@ -382,15 +390,15 @@ try:
     if not picked_elements:
         forms.alert("No elements selected.", exitscript=True)
 
+    report = ADAReport(__title__)
+
     total_volume = 0.0
     elements_with_volume = 0
     elements_without_volume = 0
     element_details = []
-    markers = []  # list of (all_triangles, centroid, volume_m3), host coords
-
-    print("=" * 70)
-    print("CALCULATING ELEMENT VOLUMES")
-    print("=" * 70)
+    markers = []      # list of (all_triangles, centroid, volume_m3), host coords
+    table_rows = []   # rows for the "Measured Elements" table
+    not_found_ids = []
 
     # Process each selected element
     for element, element_doc, display_id, transform in picked_elements:
@@ -420,8 +428,8 @@ try:
                 'category': element_category,
                 'volume': volume
             })
-            print("\nElement ID {}: {:.3f} m3".format(
-                display_id, volume * 0.0283168))
+            table_rows.append([str(display_id), element_name, element_category,
+                                "{:.3f} m3".format(volume * 0.0283168)])
 
             # Build the visualization from the element's actual solids,
             # independent of whether the number above came from the
@@ -444,29 +452,32 @@ try:
                         sum(p.Z for p in all_pts) / len(all_pts))
                     markers.append((all_triangles, centroid, volume * 0.0283168))
                 else:
-                    print("  (no solid geometry found to visualize)")
+                    report.warn("Element ID <b>{}</b>: no solid geometry found to visualize".format(display_id))
             except Exception as viz_err:
-                print("  (could not build volume visualization: {})".format(viz_err))
+                report.warn("Element ID <b>{}</b>: could not build volume visualization ({})".format(
+                    display_id, viz_err))
         else:
             elements_without_volume += 1
-            print("\nElement ID {}: No volume found".format(display_id))
+            not_found_ids.append(display_id)
+
+    if table_rows:
+        report.subheader("Measured Elements")
+        report.table(["Element ID", "Name", "Category", "Volume"], table_rows)
+
+    if not_found_ids:
+        report.warn("No volume found for element ID(s): {}".format(
+            ", ".join(str(i) for i in not_found_ids)))
 
     # Convert to display units (cubic feet -> cubic meters / liters)
     total_volume_m3 = total_volume * 0.0283168
     total_volume_l = total_volume_m3 * 1000.0
 
-    # Display summary
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print("Total elements selected: {}".format(len(picked_elements)))
-    print("Elements with volume: {}".format(elements_with_volume))
-    print("Elements without volume: {}".format(elements_without_volume))
-    print("-" * 70)
-    print("TOTAL VOLUME: {:.3f} cubic feet".format(total_volume))
-    print("TOTAL VOLUME: {:.3f} cubic meters".format(total_volume_m3))
-    print("TOTAL VOLUME: {:.2f} liters".format(total_volume_l))
-    print("=" * 70)
+    report.subheader("Summary")
+    report.line("Total elements selected: <b>{}</b>".format(len(picked_elements)))
+    report.line("Elements with volume: <b>{}</b> / without: <b>{}</b>".format(
+        elements_with_volume, elements_without_volume))
+    report.line("Total volume: <b>{:.3f} m3</b> ({:.3f} ft3 / {:.2f} L)".format(
+        total_volume_m3, total_volume, total_volume_l))
 
     # Wrap every solid face in a green, 80%-opacity shell, and place a
     # blue 3D volume readout per element, facing the current view.
@@ -488,16 +499,21 @@ try:
                         create_volume_digits(centroid, facing_normal, volume_m3)
                     except Exception as text_err:
                         text_failed += 1
-                        print("  (could not build 3D volume digits: {})".format(text_err))
+                        report.warn("Could not build 3D volume digits: {}".format(text_err))
             uidoc.RefreshActiveView()
-            print("\n{} volume marker(s) drawn (green, 80% opacity).".format(drawn))
+            report.success("{} volume marker(s) drawn (green, 80% opacity).".format(drawn))
             if text_failed:
-                print("{} of {} 3D volume digit label(s) failed to create - see errors above.".format(
-                    text_failed, drawn))
+                report.warn(
+                    "{} of {} 3D volume digit label(s) failed to create - see warnings above.".format(
+                        text_failed, drawn))
         except Exception as marker_err:
-            print("\nCould not draw volume markers: {}".format(marker_err))
+            report.error("Could not draw volume markers: {}".format(marker_err))
+
+    report.flush()
 
 except Exception as e:
-    print("Error: {}".format(e))
+    report = report if 'report' in globals() else ADAReport(__title__)
+    report.error("Error: {}".format(e))
+    report.flush()
     import traceback
-    traceback.print_exc()
+    print(traceback.format_exc())

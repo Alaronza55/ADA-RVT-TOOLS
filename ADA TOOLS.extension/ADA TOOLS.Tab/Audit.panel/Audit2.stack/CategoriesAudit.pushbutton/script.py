@@ -14,6 +14,9 @@ import datetime
 import os
 import csv
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 # Get current document
 doc = revit.doc
 
@@ -24,8 +27,7 @@ output = script.get_output()
 
 def Revit_Categories():
     results_categories = []
-    print("=== Revit Categories in Project ===")
-    
+
     # Get all model elements (not element types)
     collector = DB.FilteredElementCollector(doc).WhereElementIsNotElementType()
     category_counts = {}
@@ -44,21 +46,19 @@ def Revit_Categories():
     # Sort by count (highest first)
     sorted_categories = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
 
-    # Display results
-    print("MODEL ELEMENTS COUNT")
-    # print("Total Model Elements: {}".format(total_count))
-    # print("Categories Found: {}".format(len(category_counts)))
-    print("-" * 50)
-
-    # Add summary info to results
-    # results_categories.append(["Total Model Elements", total_count])
-    # results_categories.append(["Categories Found", len(category_counts)])
-    results_categories.append(["", ""])  # Empty row for spacing
-
     for category, count in sorted_categories:
-        print("{}: {}".format(category, count))
         results_categories.append([category, count])
-    
+
+    report = ADAReport(__title__)
+    report.line("Total model elements: <b>{}</b> across <b>{}</b> categories".format(
+        total_count, len(category_counts)))
+    report.table(["Category", "Element Count"],
+                 [[category, str(count)] for category, count in sorted_categories])
+    report.flush()
+
+    # Empty row for spacing, kept for CSV export layout
+    results_categories.insert(0, ["", ""])
+
     return results_categories
 
 def save_categories_to_csv(results_categories):
@@ -92,11 +92,11 @@ def save_categories_to_csv(results_categories):
             for result in results_categories:
                 writer.writerow(result)
 
-        print("CSV report saved to: {}".format(filepath))
+        ADAReport(__title__).success("CSV report saved to: <b>{}</b>".format(filepath)).flush()
         return filepath
-        
+
     except Exception as e:
-        print("Error saving CSV file: {}".format(str(e)))
+        ADAReport(__title__).error("Error saving CSV file: {}".format(str(e))).flush()
         return None
 
 if __name__ == '__main__':

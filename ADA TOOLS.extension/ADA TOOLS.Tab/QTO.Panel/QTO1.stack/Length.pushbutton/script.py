@@ -35,13 +35,19 @@ actually corresponds to.
 Results are printed per element and as a running total, in feet,
 meters and millimeters."""
 __title__ = "Get Length"
+__version__ = "Version 1.0"
 __author__ = "ADA"
 
 import math
 
 from pyrevit import revit, DB, UI
-from pyrevit import forms
+from pyrevit import forms, script
 from System.Collections.Generic import List
+
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py) and
+# small button-choice popup (see lib/GUI/SelectFromButtons.py)
+from GUI.ReportTheme import ADAReport
+from GUI.forms import select_from_buttons
 
 # Get the active document
 doc = revit.doc
@@ -490,9 +496,11 @@ def get_element_length(element):
 
 try:
     # Ask the user where to pick elements from
-    source = forms.CommandSwitchWindow.show(
+    source = select_from_buttons(
         ["Current Model", "Linked Model"],
-        message="Select elements in:"
+        title=__title__,
+        label="Select elements in:",
+        version=__version__
     )
 
     if not source:
@@ -535,15 +543,15 @@ try:
     if not picked_elements:
         forms.alert("No elements selected.", exitscript=True)
 
+    report = ADAReport(__title__)
+
     total_length = 0.0
     elements_with_length = 0
     elements_without_length = 0
     element_details = []
-    markers = []  # list of (p0_host, p1_host, length_m)
-
-    print("=" * 70)
-    print("CALCULATING ELEMENT LENGTHS")
-    print("=" * 70)
+    markers = []      # list of (p0_host, p1_host, length_m)
+    table_rows = []   # rows for the "Measured Elements" table
+    not_found_ids = []
 
     # Process each selected element
     for element, element_doc, display_id, transform in picked_elements:
@@ -574,8 +582,8 @@ try:
                 'category': element_category,
                 'length': length
             })
-            print("\nElement ID {}: {:.2f} m".format(
-                display_id, length * 0.3048))
+            table_rows.append([str(display_id), element_name, element_category,
+                                "{:.2f} m".format(length * 0.3048)])
 
             if p0_local is not None and p1_local is not None:
                 if transform is not None:
@@ -584,28 +592,28 @@ try:
                 else:
                     p0_host, p1_host = p0_local, p1_local
                 markers.append((p0_host, p1_host, length * 0.3048))
-            else:
-                print("  (no line geometry to visualize)")
         else:
             elements_without_length += 1
-            print("\nElement ID {}: No length found".format(display_id))
+            not_found_ids.append(display_id)
+
+    if table_rows:
+        report.subheader("Measured Elements")
+        report.table(["Element ID", "Name", "Category", "Length"], table_rows)
+
+    if not_found_ids:
+        report.warn("No length found for element ID(s): {}".format(
+            ", ".join(str(i) for i in not_found_ids)))
 
     # Convert to display units
     total_length_mm = total_length * 304.8
     total_length_m = total_length * 0.3048
 
-    # Display summary
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print("Total elements selected: {}".format(len(picked_elements)))
-    print("Elements with length: {}".format(elements_with_length))
-    print("Elements without length: {}".format(elements_without_length))
-    print("-" * 70)
-    print("TOTAL LENGTH: {:.2f} feet".format(total_length))
-    print("TOTAL LENGTH: {:.2f} meters".format(total_length_m))
-    print("TOTAL LENGTH: {:.2f} mm".format(total_length_mm))
-    print("=" * 70)
+    report.subheader("Summary")
+    report.line("Total elements selected: <b>{}</b>".format(len(picked_elements)))
+    report.line("Elements with length: <b>{}</b> / without: <b>{}</b>".format(
+        elements_with_length, elements_without_length))
+    report.line("Total length: <b>{:.2f} m</b> ({:.2f} ft / {:.0f} mm)".format(
+        total_length_m, total_length, total_length_mm))
 
     # Draw a red dimension-style arrow along each measured segment,
     # with a red 3D digit readout of its length (meters) next to it.
@@ -635,17 +643,22 @@ try:
                             create_length_digits(text_origin, facing_normal, length_m)
                     except Exception as text_err:
                         text_failed += 1
-                        print("  (could not build 3D length digits: {})".format(text_err))
+                        report.warn("Could not build 3D length digits: {}".format(text_err))
             uidoc.RefreshActiveView()
-            print("\n{} length arrow marker(s) drawn (red).".format(drawn))
+            report.success("{} length arrow marker(s) drawn (red).".format(drawn))
             if text_failed:
-                print("{} of {} 3D length digit label(s) failed to create - see errors above.".format(
-                    text_failed, drawn))
+                report.warn(
+                    "{} of {} 3D length digit label(s) failed to create - see warnings above.".format(
+                        text_failed, drawn))
         except Exception as marker_err:
-            print("\nCould not draw length markers: {}".format(marker_err))
+            report.error("Could not draw length markers: {}".format(marker_err))
+
+    report.flush()
 
 except Exception as e:
     if 'cancel' not in str(e).lower():
-        print("Error: {}".format(e))
+        report = report if 'report' in globals() else ADAReport(__title__)
+        report.error("Error: {}".format(e))
+        report.flush()
         import traceback
-        traceback.print_exc()
+        print(traceback.format_exc())

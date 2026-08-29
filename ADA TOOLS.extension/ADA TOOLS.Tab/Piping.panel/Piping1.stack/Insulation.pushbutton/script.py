@@ -22,9 +22,13 @@ from Autodesk.Revit.DB.Plumbing import Pipe, PipeInsulation
 from Autodesk.Revit.UI.Selection import ObjectType, ISelectionFilter
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 out = script.get_output()
+report = ADAReport(__title__.replace(chr(10), " "))
 
 TOL = 1.0 / 304800.0  # ~0.001 mm in feet
 
@@ -116,16 +120,13 @@ except OperationCanceledException:
 ref_pipe = doc.GetElement(ref_pick.ElementId)
 ref_bottom, ref_r, ref_ins, ref_sloped = get_bottom_data(ref_pipe)
 
-out.print_md("### Reference pipe {}".format(out.linkify(ref_pipe.Id)))
-out.print_md(
-    "- Outer radius: **{:.1f} mm**\n"
-    "- Insulation: **{}**\n"
-    "- Bottom elevation (project): **{:.1f} mm**{}".format(
-        to_mm(ref_r),
-        "{:.1f} mm".format(to_mm(ref_ins)) if ref_ins > 0 else "none",
-        to_mm(ref_bottom),
-        "\n- :warning: reference pipe is **sloped** - lowest point used"
-        if ref_sloped else ""))
+report.subheader("Reference Pipe {}".format(report.link(ref_pipe.Id)))
+report.line("Outer radius: <b>{:.1f} mm</b>".format(to_mm(ref_r)))
+report.line("Insulation: <b>{}</b>".format(
+    "{:.1f} mm".format(to_mm(ref_ins)) if ref_ins > 0 else "none"))
+report.line("Bottom elevation (project): <b>{:.1f} mm</b>".format(to_mm(ref_bottom)))
+if ref_sloped:
+    report.warn("Reference pipe is sloped - lowest point used")
 
 # ---------------------------------------------------------------- 2. targets
 try:
@@ -158,25 +159,24 @@ with revit.Transaction("Align pipe bottoms"):
             dz = ref_bottom - bottom
 
             if abs(dz) < TOL:
-                rows.append([out.linkify(pipe.Id),
+                rows.append([report.link(pipe.Id),
                              "{:.1f}".format(to_mm(insul)) if insul else "-",
                              "0.0", "already aligned"])
                 continue
 
             ElementTransformUtils.MoveElement(doc, pipe.Id, XYZ(0, 0, dz))
             moved += 1
-            rows.append([out.linkify(pipe.Id),
+            rows.append([report.link(pipe.Id),
                          "{:.1f}".format(to_mm(insul)) if insul else "-",
                          "{:+.1f}".format(to_mm(dz)),
                          "sloped - lowest point" if sloped else "OK"])
 
         except Exception as ex:
             failed += 1
-            rows.append([out.linkify(pipe.Id), "-", "-",
+            rows.append([report.link(pipe.Id), "-", "-",
                          "FAILED: {}".format(ex)])
 
 # ---------------------------------------------------------------- 4. report
-out.print_md("### Result - {} moved, {} failed".format(moved, failed))
-out.print_table(
-    table_data=rows,
-    columns=["Pipe", "Insulation (mm)", "dZ (mm)", "Status"])
+report.subheader("Result - {} moved, {} failed".format(moved, failed))
+report.table(["Pipe", "Insulation (mm)", "dZ (mm)", "Status"], rows)
+report.flush()

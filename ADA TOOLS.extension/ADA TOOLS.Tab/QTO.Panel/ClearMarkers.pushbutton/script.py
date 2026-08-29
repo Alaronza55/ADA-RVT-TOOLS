@@ -18,6 +18,9 @@ from pyrevit import revit, DB
 from pyrevit import forms, script
 from System.Collections.Generic import List
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 
 # Every marker name used by the QTO measurement tools. Keep this in
@@ -58,9 +61,13 @@ try:
     with revit.Transaction("Clear QTO Markers"):
         doc.Delete(List[DB.ElementId](marker_ids))
 
-    forms.alert("Deleted {} marker(s).".format(len(marker_ids)))
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.success("Deleted {} QTO measurement marker(s).".format(len(marker_ids)))
+    report.flush()
 
 except Exception as e:
-    print("Error: {}".format(e))
+    report = ADAReport(__title__.replace(chr(10), " "))
+    report.error("Error: {}".format(e))
+    report.flush()
     import traceback
-    traceback.print_exc()
+    print(traceback.format_exc())

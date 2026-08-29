@@ -40,146 +40,21 @@ __version__ = "Version = 1.0"
 __author__ = "ADA"
 
 import math
-import os
-import base64
 
 from pyrevit import revit, DB, UI
 from pyrevit import forms, script
 from System.Collections.Generic import List
 
 # Custom ADA GUI - small button-choice popup (same style as the picker
-# used by Sections.panel/Openings.pushbutton)
+# used by Sections.panel/Openings.pushbutton) and the shared dark/gold
+# themed report (see lib/GUI/ReportTheme.py)
 from GUI.forms import select_from_buttons
+from GUI.ReportTheme import ADAReport
 
 # Get the active document
 doc = revit.doc
 uidoc = revit.uidoc
 output = script.get_output()
-
-# --- Report styling - same dark/gold theme as lib/GUI/Resources/WPF_styles.xaml
-THEME_BG = "#0b0b09"           # header_background
-THEME_ROW_BG = "#171512"       # window background (used for alternating rows)
-THEME_GOLD = "#f6c955"         # text_magenta / text_gray / border_magenta
-THEME_GOLD_LIGHT = "#fbe8a0"   # light-yellow chip background (Element ID links)
-THEME_GOLD_DARK = "#c5a144"    # button_bg_normal
-THEME_GOLD_HOVER = "#ae8e3c"   # button_bg_hover
-THEME_TEXT = "#E5E4E2"         # text_white
-THEME_FONT = "Segoe UI, Arial, sans-serif"
-
-
-def html_header(text):
-    return (
-        '<div style="color:{gold}; font-family:{font}; font-size:16px; font-weight:bold;">'
-        '{text}</div>'
-        '<hr style="border:none; border-top:2px solid {gold}; margin:6px 0 12px 0;">'
-    ).format(gold=THEME_GOLD, font=THEME_FONT, text=text)
-
-
-def html_subheader(text):
-    return (
-        '<div style="color:{gold}; font-family:{font}; font-size:13px; '
-        'font-weight:bold; margin:10px 0 4px 0;">{text}</div>'
-    ).format(gold=THEME_GOLD, font=THEME_FONT, text=text)
-
-
-def html_line(text):
-    return '<div style="color:{gold}; font-family:{font};">{text}</div>'.format(
-        gold=THEME_GOLD, font=THEME_FONT, text=text)
-
-
-def html_warn(text):
-    return (
-        '<div style="color:{gold_dark}; font-family:{font};">&#9888; {text}</div>'
-    ).format(gold_dark=THEME_GOLD_DARK, font=THEME_FONT, text=text)
-
-
-def html_error(text):
-    return (
-        '<div style="color:#c0392b; font-family:{font}; font-weight:bold;">'
-        '&#10060; {text}</div>'
-    ).format(font=THEME_FONT, text=text)
-
-
-def html_success(text):
-    return (
-        '<div style="color:{gold}; font-family:{font}; font-weight:bold;">'
-        '&#10004; {text}</div>'
-    ).format(gold=THEME_GOLD, font=THEME_FONT, text=text)
-
-
-def html_table(columns, rows):
-    header_cells = ''.join(
-        '<th style="background-color:{bg} !important; color:{gold} !important; '
-        'text-align:left; padding:4px 10px; border:1px solid {gold_dark};">{c}</th>'.format(
-            bg=THEME_BG, gold=THEME_GOLD, gold_dark=THEME_GOLD_DARK, c=c)
-        for c in columns)
-
-    body_rows = []
-    for i, row in enumerate(rows):
-        row_bg = THEME_BG if i % 2 == 0 else THEME_ROW_BG
-        cells = ''.join(
-            '<td style="background-color:{bg} !important; color:{text} !important; '
-            'padding:4px 10px; border:1px solid {gold_dark};">{v}</td>'.format(
-                bg=row_bg, text=THEME_TEXT, gold_dark=THEME_GOLD_DARK, v=v)
-            for v in row)
-        body_rows.append('<tr>{cells}</tr>'.format(cells=cells))
-
-    return (
-        '<table style="border-collapse:collapse; font-family:{font}; font-size:12px; '
-        'margin:6px 0 12px 0;"><tr>{header}</tr>{body}</table>'
-    ).format(font=THEME_FONT, header=header_cells, body=''.join(body_rows))
-
-
-def load_signature_base64():
-    """Read the shared ADA.Tools signature image (a 3D/isometric gold
-    logo + tagline, lib/GUI/Resources/ADA_Tools_Signature.png) and
-    return it base64-encoded, or None if it can't be found."""
-    try:
-        import GUI
-        sig_path = os.path.join(os.path.dirname(GUI.__file__), "Resources", "ADA_Tools_Signature.png")
-        with open(sig_path, "rb") as f:
-            return base64.b64encode(f.read()).decode("ascii")
-    except Exception:
-        return None
-
-
-def html_signature():
-    b64 = load_signature_base64()
-    if not b64:
-        return ""
-    return (
-        '<div style="margin-top:20px; padding-top:12px; border-top:1px solid {gold_dark};">'
-        '<img src="data:image/png;base64,{b64}" alt="ADA.Tools - BIM Coordination &amp; '
-        'Auditing Tools" style="max-width:280px; height:auto; display:block;"></div>'
-    ).format(gold_dark=THEME_GOLD_DARK, b64=b64)
-
-
-def flush_report(report_html):
-    """Print every accumulated HTML fragment as the themed report - no
-    boxed panel, just the whole output page recolored to the dark
-    (#0b0b09) background so nothing white shows through around the
-    gold text (the <style> targets html/body directly, with
-    !important, since pyRevit's own output page has its own default
-    light background/table styling that would otherwise win).
-
-    The Element ID links (pyRevit's own linkify chips): light-yellow
-    background with dark (page-background-colored) text at rest, for
-    contrast; on hover the background switches to dark gold and the
-    text flips to white."""
-    if not report_html:
-        return
-    output.print_html(
-        '<style>'
-        'html, body {{ background-color:{bg} !important; }}'
-        'a, a:visited {{ background-color:{gold_light} !important; color:{bg} !important; '
-        'text-decoration:none !important; }}'
-        'a:hover, a:visited:hover {{ background-color:{gold_dark} !important; '
-        'color:#ffffff !important; }}'
-        '</style>'
-        '<div style="padding:10px 4px;">{content}</div>'.format(
-            bg=THEME_BG, gold_light=THEME_GOLD_LIGHT, gold_dark=THEME_GOLD_DARK,
-            content=''.join(report_html)))
-
 
 MARKER_NAME = "ADA_QTO_CurveLengthArrowMarker"
 TEXT_MARKER_NAME = "ADA_QTO_CurveLengthText"
@@ -647,7 +522,7 @@ def group_collinear_markers(markers):
 
 
 try:
-    report_html = []  # accumulated fragments, flushed as one themed panel
+    report = ADAReport()
 
     source = select_from_buttons(
         ["Current Model", "Linked Model"],
@@ -678,7 +553,7 @@ try:
     markers = []      # list of (p0_host, p1_host, length_m)
     table_rows = []   # rows for the "Measured Curves" table
 
-    report_html.append(html_header(__title__.replace(chr(10), " ")))
+    report.header(__title__.replace(chr(10), " "))
 
     for ref in refs:
         is_linked = ref.LinkedElementId != DB.ElementId.InvalidElementId
@@ -713,15 +588,15 @@ try:
                 elif isinstance(geom_obj, DB.Curve):
                     curve = geom_obj
         except Exception as resolve_err:
-            report_html.append(html_warn("Element ID <b>{}</b>: could not resolve picked curve ({})".format(
+            report.warn("Element ID <b>{}</b>: could not resolve picked curve ({})".format(
                 ref.LinkedElementId.IntegerValue if is_linked else ref.ElementId.IntegerValue,
-                resolve_err)))
+                resolve_err))
             continue
 
         if curve is None:
-            report_html.append(html_warn(
+            report.warn(
                 "Element ID <b>{}</b> ({}): picked reference did not resolve to "
-                "a curve, skipped".format(display_id, location_note)))
+                "a curve, skipped".format(display_id, location_note))
             continue
 
         length = curve.Length
@@ -743,18 +618,18 @@ try:
         markers.append((p0, p1, length * 0.3048))
 
     if table_rows:
-        report_html.append(html_subheader("Measured Curves"))
-        report_html.append(html_table(["Element ID", "Length"], table_rows))
+        report.subheader("Measured Curves")
+        report.table(["Element ID", "Length"], table_rows)
 
     # Convert to display units
     total_length_mm = total_length * 304.8
     total_length_m = total_length * 0.3048
 
-    report_html.append(html_subheader("Summary"))
-    report_html.append(html_line("Total curves measured: <b>{}</b>".format(len(curve_details))))
-    report_html.append(html_line(
+    report.subheader("Summary")
+    report.line("Total curves measured: <b>{}</b>".format(len(curve_details)))
+    report.line(
         "Total length: <b>{:.2f} m</b> ({:.2f} ft / {:.0f} mm)".format(
-            total_length_m, total_length, total_length_mm)))
+            total_length_m, total_length, total_length_mm))
 
     # Curves that Revit happens to have split into several collinear
     # fragments (e.g. an edge broken up by extra vertices) would
@@ -764,10 +639,10 @@ try:
     grouped_markers = group_collinear_markers(markers)
     merged_groups = [g for g in grouped_markers if g[3] > 1]
     if merged_groups:
-        report_html.append(html_subheader("Merged Collinear Curves"))
+        report.subheader("Merged Collinear Curves")
         for _, _, length_m, count in merged_groups:
-            report_html.append(html_line(
-                "{} curve(s) combined into one <b>{:.2f} m</b> dimension".format(count, length_m)))
+            report.line(
+                "{} curve(s) combined into one <b>{:.2f} m</b> dimension".format(count, length_m))
 
     # Draw a red dimension-style arrow along each measured curve (or
     # merged group of collinear curves), with a red 3D digit readout
@@ -798,23 +673,22 @@ try:
                             create_length_digits(text_origin, facing_normal, length_m)
                     except Exception as text_err:
                         text_failed += 1
-                        report_html.append(html_warn("Could not build 3D length digits: {}".format(text_err)))
+                        report.warn("Could not build 3D length digits: {}".format(text_err))
             uidoc.RefreshActiveView()
-            report_html.append(html_success("{} length arrow marker(s) drawn (red).".format(drawn)))
+            report.success("{} length arrow marker(s) drawn (red).".format(drawn))
             if text_failed:
-                report_html.append(html_warn(
+                report.warn(
                     "{} of {} 3D length digit label(s) failed to create - see warnings above.".format(
-                        text_failed, drawn)))
+                        text_failed, drawn))
         except Exception as marker_err:
-            report_html.append(html_error("Could not draw length markers: {}".format(marker_err)))
+            report.error("Could not draw length markers: {}".format(marker_err))
 
-    report_html.append(html_signature())
-    flush_report(report_html)
+    report.flush()
 
 except Exception as e:
     if 'cancel' not in str(e).lower():
-        error_html = report_html if 'report_html' in globals() else []
-        error_html.append(html_error("Error: {}".format(e)))
-        flush_report(error_html)
+        report = report if 'report' in globals() else ADAReport()
+        report.error("Error: {}".format(e))
+        report.flush()
         import traceback
         print(traceback.format_exc())

@@ -9,6 +9,9 @@ from pyrevit import revit, DB, UI, forms
 import math
 import clr
 
+# Shared ADA-Tools dark/gold themed report (see lib/GUI/ReportTheme.py)
+from GUI.ReportTheme import ADAReport
+
 doc = revit.doc
 uidoc = revit.uidoc
 
@@ -185,6 +188,17 @@ def main():
                     skipped_count += 1
         
         # Report results
+        report = ADAReport(__title__.replace(chr(10), " "))
+        report.line("Direction: <b>{}</b>".format(direction_text))
+        report.line("Offset: <b>{} mm</b>".format(offset_mm))
+        report.line("Line X position: <b>{:.3f} ft</b>".format(line_x))
+        report.line("Leader elbow X: <b>{:.3f} ft</b>".format(leader_elbow_x))
+        report.subheader("Summary")
+        report.success("Tags aligned: <b>{}</b>".format(aligned_count))
+        if skipped_count > 0:
+            report.warn("Tags skipped (no leader or no references): <b>{}</b>".format(skipped_count))
+        report.flush()
+
         message = "Leader alignment complete!\n\n"
         message += "Direction: {}\n".format(direction_text)
         message += "Offset: {} mm\n".format(offset_mm)
@@ -193,12 +207,15 @@ def main():
         message += "Tags aligned: {}\n".format(aligned_count)
         if skipped_count > 0:
             message += "Tags skipped (no leader or no references): {}".format(skipped_count)
-        
+
         forms.alert(message, title="Success")
-        
+
     except Exception as e:
         import traceback
         print(traceback.format_exc())
+        report = ADAReport(__title__.replace(chr(10), " "))
+        report.error("Error: {}".format(e))
+        report.flush()
         forms.alert("Error: {}".format(str(e)), title="Error")
 
 
