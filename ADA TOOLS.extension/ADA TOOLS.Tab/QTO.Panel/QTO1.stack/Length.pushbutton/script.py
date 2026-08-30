@@ -32,8 +32,8 @@ that element's length in meters is placed next to it, facing the
 current view. This makes it obvious which span each reported number
 actually corresponds to.
 
-Results are printed per element and as a running total, in feet,
-meters and millimeters."""
+Results are printed per element and as a running total, in meters
+and millimeters."""
 __title__ = "Get Length"
 __version__ = "Version 1.0"
 __author__ = "ADA"
@@ -612,8 +612,8 @@ try:
     report.line("Total elements selected: <b>{}</b>".format(len(picked_elements)))
     report.line("Elements with length: <b>{}</b> / without: <b>{}</b>".format(
         elements_with_length, elements_without_length))
-    report.line("Total length: <b>{:.2f} m</b> ({:.2f} ft / {:.0f} mm)".format(
-        total_length_m, total_length, total_length_mm))
+    report.line("Total length: <b>{:.2f} m</b> ({:.0f} mm)".format(
+        total_length_m, total_length_mm))
 
     # Draw a red dimension-style arrow along each measured segment,
     # with a red 3D digit readout of its length (meters) next to it.

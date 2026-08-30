@@ -18,12 +18,15 @@ face of every solid making up the element is duplicated as a green,
 Face.Triangulate()), each offset slightly outward along its own
 face normal so the whole element appears wrapped in a green shell -
 i.e. every face that contributed to "all faces of the solid(s)" is
-shown, not just one. A blue 3D digital-readout of the volume (cubic
-meters, built from raised block segments) is placed at the element's
-centroid, facing the current view.
+shown, not just one. A black 3D digital-readout of the volume (cubic
+meters, built from raised block segments) is placed flat on whichever
+of the element's own faces is most visible from the current view
+(i.e. faces the camera the most), offset just outside the green
+shell - rather than floating at the element's centroid, which is
+usually buried inside the solid and hard to read.
 
 Results are printed per element and as a running total, in cubic
-feet, cubic meters and liters.
+meters and liters.
 """
 __title__ = "Get Volume"
 __version__ = "Version 1.0"
@@ -48,6 +51,7 @@ MARKER_OFFSET = 0.04                    # feet, how far each face is pushed outw
 MARKER_COLOR = DB.Color(50, 160, 90)    # green
 MARKER_LINE_COLOR = DB.Color(0, 0, 0)   # black edges
 MARKER_TRANSPARENCY = 20                # % transparent -> 80% opacity
+MIN_LABEL_FACE_AREA_RATIO = 0.05        # ignore sliver faces below this fraction of the largest face
 
 # --- 7-segment digit geometry (same technique as Get Surface) -----------
 DIGIT_W = 0.95
@@ -56,7 +60,8 @@ STROKE = 0.24
 DIGIT_GAP = 0.30
 DOT_W = 0.42
 DEPTH = 0.13
-DIGIT_COLOR = DB.Color(30, 90, 220)   # blue
+DIGIT_COLOR = DB.Color(0, 0, 0)        # black
+DIGIT_OFFSET = 0.09                     # feet, standoff beyond the green shell so digits don't z-fight
 
 SEGMENT_RECTS = {
     'A': (STROKE * 0.5, DIGIT_H - STROKE, DIGIT_W - STROKE * 0.5, DIGIT_H),
@@ -181,6 +186,67 @@ def face_offset_triangles(face, transform, offset):
         return [tuple(tri) for tri in tris]
 
 
+def face_center_and_normal(face, transform):
+    """Return (center_point, normal, area) for a face in host
+    coordinates - the average of its triangulated vertices and its
+    normal at the face's UV midpoint. Used to pick which of an
+    element's faces is most visible from the current view, to place
+    the volume label flat on it instead of at the element's (often
+    buried) centroid."""
+    mesh = face.Triangulate()
+    if mesh is None or mesh.NumTriangles == 0:
+        return None, None, 0.0
+
+    pts = []
+    for i in range(mesh.NumTriangles):
+        tri = mesh.get_Triangle(i)
+        for j in range(3):
+            p = tri.get_Vertex(j)
+            if transform is not None:
+                p = transform.OfPoint(p)
+            pts.append(p)
+
+    if not pts:
+        return None, None, 0.0
+
+    center = DB.XYZ(
+        sum(p.X for p in pts) / len(pts),
+        sum(p.Y for p in pts) / len(pts),
+        sum(p.Z for p in pts) / len(pts))
+
+    try:
+        bbox = face.GetBoundingBox()
+        uv_mid = DB.UV((bbox.Min.U + bbox.Max.U) / 2.0, (bbox.Min.V + bbox.Max.V) / 2.0)
+        normal = face.ComputeNormal(uv_mid)
+        if transform is not None:
+            normal = transform.OfVector(normal)
+        normal = normal.Normalize()
+    except Exception:
+        return None, None, 0.0
+
+    try:
+        area = face.Area
+    except Exception:
+        area = 0.0
+
+    return center, normal, area
+
+
+def pick_visible_face(face_candidates, view_normal):
+    """From a list of (center, normal, area), pick the one that best
+    faces the current view (highest alignment with view_normal),
+    ignoring sliver faces well below the largest face's area."""
+    if not face_candidates:
+        return None, None
+
+    max_area = max(fc[2] for fc in face_candidates)
+    significant = [fc for fc in face_candidates
+                   if fc[2] >= max_area * MIN_LABEL_FACE_AREA_RATIO] or face_candidates
+
+    center, normal, area = max(significant, key=lambda fc: fc[1].DotProduct(view_normal))
+    return center, normal
+
+
 def clear_old_markers():
     old_ids = []
     for ds in DB.FilteredElementCollector(doc).OfClass(DB.DirectShape):
@@ -303,14 +369,14 @@ def face_reading_basis(normal):
     return u, v
 
 
-def create_volume_digits(centroid, facing_normal, volume_m3):
-    u, v = face_reading_basis(facing_normal)
+def create_volume_digits(label_point, label_normal, volume_m3):
+    u, v = face_reading_basis(label_normal)
 
     text = "{:.2f}".format(volume_m3)
     total_w = sum((DOT_W if c == '.' else DIGIT_W) + DIGIT_GAP for c in text) - DIGIT_GAP
-    origin = centroid.Add(u.Multiply(-total_w / 2.0)).Add(facing_normal.Multiply(MARKER_OFFSET))
+    origin = label_point.Add(u.Multiply(-total_w / 2.0)).Add(label_normal.Multiply(DIGIT_OFFSET))
 
-    face_loops = build_number_faces(text, origin, u, v, facing_normal)
+    face_loops = build_number_faces(text, origin, u, v, label_normal)
 
     builder = DB.TessellatedShapeBuilder()
     builder.OpenConnectedFaceSet(False)
@@ -392,11 +458,19 @@ try:
 
     report = ADAReport(__title__)
 
+    # Computed once up front (view-only, no transaction needed) so each
+    # element's label can be placed on whichever of its own faces is
+    # most visible from here, rather than always facing the camera.
+    try:
+        facing_normal = doc.ActiveView.ViewDirection.Normalize()
+    except Exception:
+        facing_normal = DB.XYZ(0, 0, 1)
+
     total_volume = 0.0
     elements_with_volume = 0
     elements_without_volume = 0
     element_details = []
-    markers = []      # list of (all_triangles, centroid, volume_m3), host coords
+    markers = []      # list of (all_triangles, label_point, label_normal, volume_m3), host coords
     table_rows = []   # rows for the "Measured Elements" table
     not_found_ids = []
 
@@ -437,20 +511,31 @@ try:
             try:
                 solids = get_element_solids(element)
                 all_triangles = []
+                face_candidates = []  # (center, normal, area) per face, host coords
                 for solid in solids:
                     if solid.Faces.Size == 0:
                         continue
                     for face in solid.Faces:
                         all_triangles.extend(
                             face_offset_triangles(face, transform, MARKER_OFFSET))
+                        center, normal, area = face_center_and_normal(face, transform)
+                        if center is not None and normal is not None:
+                            face_candidates.append((center, normal, area))
 
                 if all_triangles:
-                    all_pts = [p for tri in all_triangles for p in tri]
-                    centroid = DB.XYZ(
-                        sum(p.X for p in all_pts) / len(all_pts),
-                        sum(p.Y for p in all_pts) / len(all_pts),
-                        sum(p.Z for p in all_pts) / len(all_pts))
-                    markers.append((all_triangles, centroid, volume * 0.0283168))
+                    # Prefer placing the label flat on whichever real face
+                    # is most visible from the current view; fall back to
+                    # the overall centroid (old behavior) only if no face
+                    # info could be resolved.
+                    label_point, label_normal = pick_visible_face(face_candidates, facing_normal)
+                    if label_point is None:
+                        all_pts = [p for tri in all_triangles for p in tri]
+                        label_point = DB.XYZ(
+                            sum(p.X for p in all_pts) / len(all_pts),
+                            sum(p.Y for p in all_pts) / len(all_pts),
+                            sum(p.Z for p in all_pts) / len(all_pts))
+                        label_normal = facing_normal
+                    markers.append((all_triangles, label_point, label_normal, volume * 0.0283168))
                 else:
                     report.warn("Element ID <b>{}</b>: no solid geometry found to visualize".format(display_id))
             except Exception as viz_err:
@@ -476,27 +561,24 @@ try:
     report.line("Total elements selected: <b>{}</b>".format(len(picked_elements)))
     report.line("Elements with volume: <b>{}</b> / without: <b>{}</b>".format(
         elements_with_volume, elements_without_volume))
-    report.line("Total volume: <b>{:.3f} m3</b> ({:.3f} ft3 / {:.2f} L)".format(
-        total_volume_m3, total_volume, total_volume_l))
+    report.line("Total volume: <b>{:.3f} m3</b> ({:.2f} L)".format(
+        total_volume_m3, total_volume_l))
 
     # Wrap every solid face in a green, 80%-opacity shell, and place a
-    # blue 3D volume readout per element, facing the current view.
+    # black 3D volume readout per element, flat on whichever of its own
+    # faces is most visible from the current view.
     if markers:
         drawn = 0
         text_failed = 0
         try:
             with revit.Transaction("QTO Volume Marker"):
                 clear_old_markers()
-                try:
-                    facing_normal = doc.ActiveView.ViewDirection.Normalize()
-                except Exception:
-                    facing_normal = DB.XYZ(0, 0, 1)
 
-                for all_triangles, centroid, volume_m3 in markers:
+                for all_triangles, label_point, label_normal, volume_m3 in markers:
                     create_volume_marker(all_triangles)
                     drawn += 1
                     try:
-                        create_volume_digits(centroid, facing_normal, volume_m3)
+                        create_volume_digits(label_point, label_normal, volume_m3)
                     except Exception as text_err:
                         text_failed += 1
                         report.warn("Could not build 3D volume digits: {}".format(text_err))

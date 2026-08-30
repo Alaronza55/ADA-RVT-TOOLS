@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 __doc__ = """Delete every visualization marker left behind by the QTO
 measurement tools (Get Surface, Get Volume, Get Length, Get Length
-(Curve), Get Surface (Test - Plane)) - the cones, duplicate
-face/volume shells, dimension arrows, and 3D digit readouts they draw
-in the model to show what was measured.
+(Curve)) - the duplicate face/volume shells, dimension arrows, and 3D
+digit readouts they draw in the model to show what was measured.
 
 These markers are real DirectShape elements created in the active
 (host) document, tagged with a fixed name per tool. This script
@@ -26,9 +25,8 @@ doc = revit.doc
 # Every marker name used by the QTO measurement tools. Keep this in
 # sync if a tool's MARKER_NAME / TEXT_MARKER_NAME constants change.
 MARKER_NAMES = {
-    "ADA_QTO_FaceMarker",         # Get Surface - cone
-    "ADA_QTO_FacePlaneMarker",    # Get Surface (Test - Plane) - duplicate face plane
-    "ADA_QTO_FaceAreaText",       # Get Surface (Test - Plane) - 3D area digits
+    "ADA_QTO_FacePlaneMarker",    # Get Surface - duplicate face plane
+    "ADA_QTO_FaceAreaText",       # Get Surface - 3D area digits
     "ADA_QTO_VolumeFaceMarker",   # Get Volume - green face shell
     "ADA_QTO_VolumeText",         # Get Volume - 3D volume digits
     "ADA_QTO_LengthArrowMarker",  # Get Length - red dimension arrow

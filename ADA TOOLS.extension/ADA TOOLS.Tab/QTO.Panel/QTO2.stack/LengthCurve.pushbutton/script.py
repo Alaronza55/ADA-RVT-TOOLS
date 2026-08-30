@@ -33,7 +33,7 @@ they are merged into a single combined arrow spanning the group, with
 one label showing the SUM of their lengths, instead of one arrow per
 fragment.
 
-Results are printed per curve and as a running total, in feet, meters
+Results are printed per curve and as a running total, in meters
 and millimeters."""
 __title__ = "Get Length\n(Curve)"
 __version__ = "Version = 1.0"
@@ -628,8 +628,8 @@ try:
     report.subheader("Summary")
     report.line("Total curves measured: <b>{}</b>".format(len(curve_details)))
     report.line(
-        "Total length: <b>{:.2f} m</b> ({:.2f} ft / {:.0f} mm)".format(
-            total_length_m, total_length, total_length_mm))
+        "Total length: <b>{:.2f} m</b> ({:.0f} mm)".format(
+            total_length_m, total_length_mm))
 
     # Curves that Revit happens to have split into several collinear
     # fragments (e.g. an edge broken up by extra vertices) would
