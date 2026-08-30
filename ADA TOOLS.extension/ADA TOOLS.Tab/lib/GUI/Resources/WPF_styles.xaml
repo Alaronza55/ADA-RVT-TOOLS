@@ -2,8 +2,11 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:local="clr-namespace:Common.WPF_styles">
 
+            <!-->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>[FONT]-->
+            <FontFamily x:Key="AppFont">Arial Narrow</FontFamily>
+
             <!-->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>[COLOURS]-->
-            <SolidColorBrush x:Key="header_background"  Color="#0b0b09" />
+            <SolidColorBrush x:Key="header_background"  Color="#1E1E1E" />
 
             <SolidColorBrush x:Key="text_white"         Color="#E5E4E2" />
             <SolidColorBrush x:Key="text_gray"          Color="#f6c955" />
@@ -19,12 +22,22 @@
             <SolidColorBrush x:Key="uncheckbox_checked_colour"     Color="Gray" />
             <SolidColorBrush x:Key="checkbox_checked_colour"     Color="#f6c955" />
 
-            <SolidColorBrush x:Key="footer_donate"     Color="#0b0b09" />
+            <SolidColorBrush x:Key="footer_donate"     Color="#1E1E1E" />
 
 
 
 
 
+
+            <!-->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>[STYLE] - WINDOW -->
+            <!-- FontFamily is an inherited property - setting it once here
+                 cascades down to every control (TextBlock, Button, TextBox,
+                 Label, CheckBox...) in any my_WPF window that pulls in this
+                 resource dictionary via add_wpf_resource(), unless a more
+                 specific style below overrides it. -->
+            <Style TargetType="{x:Type Window}">
+                <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+            </Style>
 
             <!-->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>[STYLE] - REPEAT BUTTON? -->
 
@@ -70,7 +83,7 @@
             <!-->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>[STYLE] - BUTTON -->
             <Style TargetType="Button">
                 <!--[BUTTON] STYLES-->
-                <Setter Property="TextElement.FontFamily"   Value="Arial"/>
+                <Setter Property="TextElement.FontFamily"   Value="{StaticResource AppFont}"/>
                 <Setter Property="Background"               Value="{StaticResource button_bg_normal}"/>
                 <Setter Property="Foreground"               Value="{StaticResource button_fg_normal}"/>
                 <Setter Property="Cursor"                   Value="Hand"/>

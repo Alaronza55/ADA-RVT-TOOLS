@@ -13,16 +13,10 @@
     ShowInTaskbar="True"
     WindowStyle="None"
     AllowsTransparency="True"
-    Background="#171512">
+    Background="#1E1E1E">
 
     <!--MAIN-->
-    <Grid>
-        <Grid.Background>
-            <LinearGradientBrush StartPoint="0,1" EndPoint="1,0">
-                <GradientStop Color= "#0b0b09" Offset="0" />
-                <GradientStop Color="#171512" Offset="1" />
-            </LinearGradientBrush>
-        </Grid.Background>
+    <Grid Background="#1E1E1E">
 
         <Grid.RowDefinitions>
             <RowDefinition Height="25"/>
@@ -50,11 +44,13 @@
                         VerticalAlignment="Center"
                         HorizontalAlignment="Left">
 
-                <TextBlock Margin="5,0,0,0">
+                <Image x:Name="logo_icon" Width="18" Height="18" Margin="6,0,4,0" Stretch="Uniform"/>
+
+                <TextBlock>
                     <Hyperlink
                         RequestNavigate="Hyperlink_RequestNavigate"
                         NavigateUri="https://www.linkedin.com/company/80151029"
-                        FontSize="14px"
+                        FontSize="12px"
                         FontWeight="Heavy"
                         Foreground="{StaticResource text_white}">
                         ADA-Tools

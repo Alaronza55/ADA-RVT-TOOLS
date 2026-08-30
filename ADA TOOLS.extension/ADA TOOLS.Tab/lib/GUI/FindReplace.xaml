@@ -47,7 +47,7 @@
                     <Hyperlink  
                         RequestNavigate="Hyperlink_RequestNavigate" 
                         NavigateUri="https://erikfrits.com/blog/"
-                        FontSize="14px"
+                        FontSize="12px"
                         FontWeight="Heavy"
                         Foreground="{StaticResource text_white}">
                         EF-Tools

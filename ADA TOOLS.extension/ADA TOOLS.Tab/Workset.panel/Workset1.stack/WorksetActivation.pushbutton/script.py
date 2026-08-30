@@ -9,7 +9,7 @@ from pyrevit import forms, revit, DB, script
 # popup window uses for its dark/gold look - inheriting from it and calling
 # add_wpf_resource() pulls in lib/GUI/Resources/WPF_styles.xaml, which styles
 # Button/CheckBox/TextBox/ListBox/ScrollBar implicitly (no XAML needed here).
-from GUI.ReportTheme import ADAReport, THEME_BG, THEME_ROW_BG, THEME_GOLD, THEME_GOLD_DARK, THEME_TEXT
+from GUI.ReportTheme import ADAReport, THEME_BG, THEME_GOLD, THEME_GOLD_DARK, THEME_TEXT
 from GUI.forms import my_WPF
 from System.Collections.Generic import List
 from System.Collections.ObjectModel import ObservableCollection
@@ -17,11 +17,11 @@ from System.Windows import Window, MessageBox
 from System.Windows.Controls import (
     TextBox, ListBox, Button, StackPanel, DockPanel,
     SelectionMode, TextBlock, Grid, RowDefinition, ColumnDefinition,
-    CheckBox, ScrollBarVisibility
+    CheckBox, ScrollBarVisibility, Image
 )
 from System.Windows.Data import Binding
 from System.Windows.Input import KeyEventArgs, Key
-from System.Windows.Media import SolidColorBrush, ColorConverter, LinearGradientBrush, GradientStop
+from System.Windows.Media import SolidColorBrush, ColorConverter, Stretch
 from System import Windows
 
 doc = revit.doc
@@ -77,13 +77,7 @@ class WorksetVisibilityWindow(my_WPF):
         self.WindowStyle = getattr(Windows.WindowStyle, "None")
         self.AllowsTransparency = True
         self.add_wpf_resource()
-
-        gradient = LinearGradientBrush()
-        gradient.StartPoint = Windows.Point(0, 1)
-        gradient.EndPoint = Windows.Point(1, 0)
-        gradient.GradientStops.Add(GradientStop(ColorConverter.ConvertFromString(THEME_BG), 0))
-        gradient.GradientStops.Add(GradientStop(ColorConverter.ConvertFromString(THEME_ROW_BG), 1))
-        self.Background = gradient
+        self.Background = theme_brush(THEME_BG)
 
         # Create UI
         self._create_ui()
@@ -135,15 +129,29 @@ class WorksetVisibilityWindow(my_WPF):
         header_grid.ColumnDefinitions.Add(col_title)
         header_grid.ColumnDefinitions.Add(col_close)
 
+        logo_panel = DockPanel()
+        logo_panel.VerticalAlignment = Windows.VerticalAlignment.Center
+        logo_panel.HorizontalAlignment = Windows.HorizontalAlignment.Left
+
+        logo_icon = Image()
+        logo_icon.Source = self.load_logo_icon()
+        logo_icon.Width = 18
+        logo_icon.Height = 18
+        logo_icon.Margin = Windows.Thickness(6, 0, 4, 0)
+        logo_icon.Stretch = Stretch.Uniform
+        logo_panel.Children.Add(logo_icon)
+
         logo_text = TextBlock()
         logo_text.Text = "ADA-Tools"
         logo_text.FontWeight = Windows.FontWeights.Heavy
-        logo_text.FontSize = 14
-        logo_text.Margin = Windows.Thickness(5, 0, 0, 0)
+        logo_text.FontSize = 12
         logo_text.VerticalAlignment = Windows.VerticalAlignment.Center
         logo_text.Foreground = theme_brush(THEME_TEXT)
-        Grid.SetColumn(logo_text, 0)
-        header_grid.Children.Add(logo_text)
+        logo_panel.Children.Add(logo_text)
+
+        Grid.SetColumn(logo_panel, 0)
+        Grid.SetColumnSpan(logo_panel, 2)
+        header_grid.Children.Add(logo_panel)
 
         title_text = TextBlock()
         title_text.Text = "Workset Visibility Manager"

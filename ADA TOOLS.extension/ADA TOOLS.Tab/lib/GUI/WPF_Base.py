@@ -18,6 +18,7 @@ from System.Windows.Window import DragMove
 from System.Windows.Input import MouseButtonState
 import wpf
 from System.Windows import Application, Window, ResourceDictionary
+from System.Windows.Media.Imaging import BitmapImage, BitmapCacheOption
 from System import Uri
 
 # ╦ ╦╔═╗╔═╗  ╔╦╗╔═╗╔╦╗╔═╗╦  ╔═╗╔╦╗╔═╗
@@ -37,6 +38,19 @@ class my_WPF(Window):
         r               = ResourceDictionary()
         r.Source        = Uri(path_styles)
         self.Resources  = r
+
+    def load_logo_icon(self):
+        """BitmapImage for the ADA.Tools icon glyph (lib/GUI/Resources/
+        ADA_Tools_Icon.png) - for the small Image in every window's
+        header, next to the "ADA-Tools" link."""
+        dir_path  = os.path.dirname(__file__)
+        icon_path = os.path.join(dir_path, 'Resources', 'ADA_Tools_Icon.png')
+        bmp = BitmapImage()
+        bmp.BeginInit()
+        bmp.UriSource   = Uri(icon_path)
+        bmp.CacheOption = BitmapCacheOption.OnLoad
+        bmp.EndInit()
+        return bmp
 
     # ╔═╗╦ ╦╦  ╔═╗╦  ╦╔═╗╔╗╔╔╦╗╔═╗
     # ║ ╦║ ║║  ║╣ ╚╗╔╝║╣ ║║║ ║ ╚═╗

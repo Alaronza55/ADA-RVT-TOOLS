@@ -13,16 +13,10 @@
     ShowInTaskbar="True"
     WindowStyle="None"
     AllowsTransparency="True"
-    Background="#171512">
+    Background="#1E1E1E">
 
     <!--MAIN-->
-    <Grid>
-        <Grid.Background>
-            <LinearGradientBrush StartPoint="0,1" EndPoint="1,0">
-                <GradientStop Color= "#0b0b09" Offset="0" />
-                <GradientStop Color="#171512" Offset="1" />
-            </LinearGradientBrush>
-        </Grid.Background>
+    <Grid Background="#1E1E1E">
 
 
         <Grid.RowDefinitions>
@@ -53,12 +47,13 @@
                         VerticalAlignment="Center"
                         HorizontalAlignment="Left">
 
+                <Image x:Name="logo_icon" Width="18" Height="18" Margin="6,0,4,0" Stretch="Uniform"/>
 
-                <TextBlock Margin="5,0,0,0">
+                <TextBlock>
                     <Hyperlink
                         RequestNavigate="Hyperlink_RequestNavigate"
                         NavigateUri="https://www.linkedin.com/company/80151029"
-                        FontSize="14px"
+                        FontSize="12px"
                         FontWeight="Heavy"
                         Foreground="{StaticResource text_white}">
                         ADA-Tools
@@ -184,7 +179,7 @@
 
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <CheckBox  Background="#171512" Foreground="{StaticResource text_white}" IsChecked="{Binding IsChecked}"  Checked="UIe_ItemChecked" >
+                        <CheckBox  Background="#1E1E1E" Foreground="{StaticResource text_white}" IsChecked="{Binding IsChecked}"  Checked="UIe_ItemChecked" >
                             <TextBlock Text="{Binding Name}"/>
                         </CheckBox>
                     </DataTemplate>
