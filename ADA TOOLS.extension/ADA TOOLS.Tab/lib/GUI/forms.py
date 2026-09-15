@@ -2,6 +2,7 @@ from WPF_Base import my_WPF
 from FindReplace import FindReplace
 from SelectFromDict import select_from_dict
 from SelectFromButtons import select_from_buttons
+from AskForInputs import ask_for_inputs
 
 
 class ListItem:
