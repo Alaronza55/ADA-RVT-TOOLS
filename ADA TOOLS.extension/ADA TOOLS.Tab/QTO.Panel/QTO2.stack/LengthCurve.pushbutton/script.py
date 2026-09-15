@@ -22,11 +22,12 @@ placement transform, and matched against the linked element's own
 curves/edges by closest projection - the same technique used by "Get
 Surface" for linked faces.
 
-Visualization: a red double-headed dimension-style arrow is drawn
-along each picked curve's exact endpoints, offset toward the current
+Visualization: a red double-headed dimension-style arrow is drawn a
+bit off each picked curve's exact endpoints, offset toward the current
 view so it stays readable regardless of the curve's own orientation,
-with a red 3D digit readout of its length in meters placed next to it
-- same technique as "Get Length". If several picked curves turn out
+with a witness line at each end running back to the true endpoint and
+a red 3D digit readout of its length in meters placed next to it -
+same technique as "Get Length". If several picked curves turn out
 to sit on the same vector (same direction, same line - e.g. one edge
 that Revit happens to have split into multiple collinear fragments),
 they are merged into a single combined arrow spanning the group, with
@@ -64,9 +65,8 @@ ARROWHEAD_RADIUS = 0.13        # feet
 ARROWHEAD_SIDES = 16
 SHAFT_RADIUS = 0.045           # feet
 SHAFT_SIDES = 12
-TICK_LENGTH = 0.55             # feet, perpendicular tick mark at each end
-TICK_THICKNESS = 0.05
-TICK_DEPTH = 0.05
+WITNESS_RADIUS = 0.03          # feet, witness line from the true edge to the offset arrow
+WITNESS_SIDES = 8
 ARROW_OFFSET_MIN = 0.5         # feet, standoff toward the viewer off the measured line
 ARROW_OFFSET_MAX = 3.0         # feet, cap for very long curves
 ARROW_OFFSET_FRACTION = 0.12   # offset grows with curve length, up to the cap above
@@ -247,36 +247,58 @@ def build_cylinder_faces(p0, p1, radius, sides):
     return loops
 
 
-def offset_arrow_points(p0, p1, view_normal):
-    """Push the measured segment straight toward the viewer (along
-    view_normal - the active view's ViewDirection, which already
-    points toward the camera) so the drawn arrow pops out in front of
-    the curve instead of sitting right on top of it - staying
-    readable no matter how the curve itself is oriented. Shifting both
-    endpoints by the same vector doesn't change the segment's
-    direction/length, so this doesn't need to be perpendicular to it.
-    The offset scales with the segment's length (clamped between
-    ARROW_OFFSET_MIN and ARROW_OFFSET_MAX) so it stays visible on both
-    short and long curves. Returns
-    (p0_draw, p1_draw, direction, offset_dir), or all-None if p0/p1
-    coincide."""
+def offset_arrow_points(p0, p1, view):
+    """Push the measured segment toward the viewer AND sideways within
+    the view plane, so the drawn arrow visibly separates from the
+    curve on screen instead of appearing to sit right on top of it -
+    staying readable no matter how the curve itself is oriented.
+    Offsetting along the view's ViewDirection alone isn't enough:
+    Revit's default 3D views are orthographic, and an orthographic
+    projection is exactly "drop the ViewDirection component", so a
+    pure ViewDirection shift produces NO on-screen displacement at
+    all - the arrow would land exactly on top of the measured curve.
+    The in-plane component follows the same convention as a hand-drawn
+    dimension: a mostly-vertical segment (parallel to the view's up)
+    gets offset sideways, to the right; a mostly-horizontal segment
+    gets offset straight down, below it. Shifting both endpoints by
+    the same vector doesn't change the segment's direction/length, so
+    this doesn't need to be perpendicular to it. The offset scales
+    with the segment's length (clamped between ARROW_OFFSET_MIN and
+    ARROW_OFFSET_MAX) so it stays visible on both short and long
+    curves. Returns (p0_draw, p1_draw, direction, offset_dir), or
+    all-None if p0/p1 coincide."""
     axis = p1.Subtract(p0)
     dist = axis.GetLength()
     if dist < 1e-6:
         return None, None, None, None
     direction = axis.Normalize()
-    offset_dir = view_normal.Normalize()
+
+    try:
+        toward_camera = view.ViewDirection.Normalize()
+        right = view.RightDirection.Normalize()
+        up = view.UpDirection.Normalize()
+    except Exception:
+        toward_camera, right, up = DB.XYZ(0, 0, 1), DB.XYZ(1, 0, 0), DB.XYZ(0, 1, 0)
+
+    if abs(direction.DotProduct(up)) >= abs(direction.DotProduct(right)):
+        in_plane = right
+    else:
+        in_plane = up.Negate()
+    offset_dir = toward_camera.Add(in_plane).Normalize()
+
     offset = max(ARROW_OFFSET_MIN, min(ARROW_OFFSET_MAX, dist * ARROW_OFFSET_FRACTION))
     shift = offset_dir.Multiply(offset)
     return p0.Add(shift), p1.Add(shift), direction, offset_dir
 
 
-def build_arrow_faces(p0, p1):
+def build_arrow_faces(p0, p1, p0_true, p1_true):
     """Build a double-headed dimension-style arrow from p0 to p1: a
     thin shaft with a solid arrowhead (cone) pointing at each
-    endpoint, plus a short perpendicular tick mark at each end - the
-    same convention as a Revit dimension line. p0/p1 are expected to
-    already be the (offset) draw points."""
+    endpoint, plus a witness line at each end running all the way back
+    to the true measured point (p0_true/p1_true) - the same convention
+    as a Revit dimension line's extension lines, so it's unambiguous
+    exactly which edge the offset arrow corresponds to. p0/p1 are
+    expected to already be the (offset) draw points."""
     axis = p1.Subtract(p0)
     dist = axis.GetLength()
     if dist < 1e-6:
@@ -293,26 +315,22 @@ def build_arrow_faces(p0, p1):
     if shaft_p1.Subtract(shaft_p0).DotProduct(direction) > 1e-6:
         faces.extend(build_cylinder_faces(shaft_p0, shaft_p1, SHAFT_RADIUS, SHAFT_SIDES))
 
-    tick_u, tick_v = face_reading_basis(direction)
-    for p in (p0, p1):
-        origin = (p.Subtract(tick_u.Multiply(TICK_THICKNESS / 2.0))
-                   .Subtract(tick_v.Multiply(TICK_LENGTH / 2.0))
-                   .Subtract(direction.Multiply(TICK_DEPTH / 2.0)))
-        faces.extend(box_faces(
-            origin, tick_u, tick_v, direction,
-            0.0, TICK_THICKNESS, 0.0, TICK_LENGTH, 0.0, TICK_DEPTH))
+    for p_draw, p_true in ((p0, p0_true), (p1, p1_true)):
+        if p_draw.Subtract(p_true).GetLength() > 1e-6:
+            faces.extend(build_cylinder_faces(p_true, p_draw, WITNESS_RADIUS, WITNESS_SIDES))
 
     return faces
 
 
-def create_arrow_marker(p0, p1, view_normal):
+def create_arrow_marker(p0, p1, view):
     """p0/p1 are the true measured endpoints (host coords); the drawn
-    arrow is offset toward the viewer from them via offset_arrow_points."""
-    p0_draw, p1_draw, direction, _ = offset_arrow_points(p0, p1, view_normal)
+    arrow is offset off them (toward the viewer and sideways within
+    the view plane) via offset_arrow_points."""
+    p0_draw, p1_draw, direction, _ = offset_arrow_points(p0, p1, view)
     if direction is None:
         return None
 
-    face_loops = build_arrow_faces(p0_draw, p1_draw)
+    face_loops = build_arrow_faces(p0_draw, p1_draw, p0, p1)
     if not face_loops:
         return None
 
@@ -653,17 +671,18 @@ try:
         try:
             with revit.Transaction("QTO Curve Length Marker"):
                 clear_old_markers()
+                view = doc.ActiveView
                 try:
-                    facing_normal = doc.ActiveView.ViewDirection.Normalize()
+                    facing_normal = view.ViewDirection.Normalize()
                 except Exception:
                     facing_normal = DB.XYZ(0, 0, 1)
 
                 for p0, p1, length_m, _count in grouped_markers:
-                    marker = create_arrow_marker(p0, p1, facing_normal)
+                    marker = create_arrow_marker(p0, p1, view)
                     if marker is not None:
                         drawn += 1
                     try:
-                        p0_draw, p1_draw, direction, offset_dir = offset_arrow_points(p0, p1, facing_normal)
+                        p0_draw, p1_draw, direction, offset_dir = offset_arrow_points(p0, p1, view)
                         if direction is not None:
                             midpoint = DB.XYZ(
                                 (p0_draw.X + p1_draw.X) / 2.0,
