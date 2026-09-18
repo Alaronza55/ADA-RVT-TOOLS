@@ -1,21 +1,25 @@
 # -*- coding: utf-8 -*-
-__doc__ = """Pick one element (in this model or inside a Revit link), rebuild
-its solid geometry as VOID geometry, and use it to cut other elements
-of this model.
+__doc__ = """Pick one or more elements (in this model or inside a Revit
+link), rebuild their solid geometry as VOID geometry, then click the
+elements of this model that the void should cut.
 
 Revit only cuts with voids that live inside a family, so the script:
-  1. extracts the picked element's solids (taken through the link's
+  1. extracts the picked elements' solids (taken through the link's
      placement transform when the source is linked, and boolean-unioned
      into as few lumps as Revit allows),
   2. builds a temporary Generic Model family around them - each solid
      becomes a FreeForm element turned into a void, and the family is
      set to "Cut with Voids When Loaded",
   3. loads that family and places one instance exactly where the
-     original element is,
-  4. finds every element of this model whose geometry intersects the
-     void, lets you choose which of them to cut (only categories Revit
-     allows to be cut with voids are offered), and applies the cuts
-     with InstanceVoidCutUtils.
+     original elements are,
+  4. lets you click the elements to cut directly in the model - the
+     cursor only accepts categories Revit allows to be cut with voids
+     (walls, floors, roofs, framing, generic models...) - and applies
+     the cuts with InstanceVoidCutUtils.
+
+Note: a void cut only removes material where the void and the element
+actually overlap - clicking an element the void never touches changes
+nothing visible.
 
 The cuts are ordinary void cuts: they update if the cut elements move,
 and DELETING THE VOID INSTANCE REMOVES ALL ITS CUTS - the report ends
@@ -35,21 +39,21 @@ clr.AddReference('RevitAPIUI')
 
 from Autodesk.Revit.DB import (
     BooleanOperationsType, BooleanOperationsUtils, BuiltInParameter,
-    ElementIntersectsSolidFilter, Family, FilteredElementCollector,
-    FreeFormElement, GeometryElement, GeometryInstance, IFamilyLoadOptions,
-    InstanceVoidCutUtils, Level, Options, RevitLinkInstance, SaveAsOptions,
-    Solid, SolidUtils, Transaction, Transform, ViewDetailLevel, XYZ
+    Family, FilteredElementCollector, FreeFormElement, GeometryElement,
+    GeometryInstance, IFamilyLoadOptions, InstanceVoidCutUtils, Level,
+    Options, RevitLinkInstance, SaveAsOptions, Solid, SolidUtils,
+    Transaction, Transform, ViewDetailLevel, XYZ
 )
 from Autodesk.Revit.DB.Structure import StructuralType
-from Autodesk.Revit.UI.Selection import ObjectType
+from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
 from Autodesk.Revit.Exceptions import OperationCanceledException
 
 from pyrevit import forms, revit, script
 
-# Custom ADA GUI - small button-choice popup, themed list picker (see
-# lib/GUI/SelectFromButtons.py and lib/GUI/SelectFromDict.py) and the
-# shared dark/gold themed report (see lib/GUI/ReportTheme.py)
-from GUI.forms import select_from_buttons, select_from_dict
+# Custom ADA GUI - small button-choice popup (see
+# lib/GUI/SelectFromButtons.py) and the shared dark/gold themed report
+# (see lib/GUI/ReportTheme.py)
+from GUI.forms import select_from_buttons
 from GUI.ReportTheme import ADAReport
 
 doc = revit.doc
@@ -80,38 +84,97 @@ class FamilyLoadHandler(IFamilyLoadOptions):
         return True
 
 
+class AllowAll(ISelectionFilter):
+    def AllowElement(self, element):
+        return True
+
+    def AllowReference(self, reference, point):
+        return True
+
+
+class CuttableFilter(ISelectionFilter):
+    """Only lets the user click elements that Revit can cut with a void
+    (and never the source elements themselves)."""
+
+    def __init__(self, exclude_ids):
+        self.exclude_ids = exclude_ids
+
+    def AllowElement(self, element):
+        if eid_value(element.Id) in self.exclude_ids:
+            return False
+        try:
+            return InstanceVoidCutUtils.CanBeCutWithVoid(element)
+        except Exception:
+            return False
+
+    def AllowReference(self, reference, point):
+        return False
+
+
 # ---------------------------------------------------------------------------
 # selection
 # ---------------------------------------------------------------------------
 
-def pick_source_element():
-    """Ask where the element is, then pick it. Returns
-    (element, link_transform_or_None, is_linked)."""
+def pick_source_elements():
+    """Ask where the void-source elements are, then pick one or more.
+    Returns [(element, link_transform_or_None), ...]. Elements already
+    selected before launching count as the host-model choice."""
     source = select_from_buttons(
-        ['Element in this model', 'Element inside a Revit link'],
+        ['Elements in this model', 'Elements inside a Revit link'],
         title=TITLE,
-        label='Where is the element to turn into a void?',
+        label='Where are the elements to turn into a void?',
         version=__version__)
     if not source:
         script.exit()
 
-    if source.startswith('Element in this'):
-        ref = uidoc.Selection.PickObject(
-            ObjectType.Element,
-            "Select the element whose geometry becomes the void")
-        return doc.GetElement(ref.ElementId), None, False
+    result = []
+    if source.startswith('Elements in this'):
+        pre = list(uidoc.Selection.GetElementIds())
+        if pre:
+            for eid in pre:
+                el = doc.GetElement(eid)
+                if el is not None:
+                    result.append((el, None))
+            return result
 
-    ref = uidoc.Selection.PickObject(
+        refs = uidoc.Selection.PickObjects(
+            ObjectType.Element, AllowAll(),
+            "Select the elements whose geometry becomes the void, then Finish")
+        for r in refs:
+            el = doc.GetElement(r.ElementId)
+            if el is not None:
+                result.append((el, None))
+        return result
+
+    refs = uidoc.Selection.PickObjects(
         ObjectType.LinkedElement,
-        "Select the linked element whose geometry becomes the void")
-    link = doc.GetElement(ref.ElementId)
-    if not isinstance(link, RevitLinkInstance):
-        forms.alert("That was not a linked element.", exitscript=True)
-    ldoc = link.GetLinkDocument()
-    if ldoc is None:
-        forms.alert("The link is not loaded.", exitscript=True)
-    element = ldoc.GetElement(ref.LinkedElementId)
-    return element, link.GetTotalTransform(), True
+        "Select the linked elements whose geometry becomes the void, "
+        "then Finish")
+    for r in refs:
+        link = doc.GetElement(r.ElementId)
+        if not isinstance(link, RevitLinkInstance):
+            continue
+        ldoc = link.GetLinkDocument()
+        if ldoc is None:
+            continue
+        el = ldoc.GetElement(r.LinkedElementId)
+        if el is not None:
+            result.append((el, link.GetTotalTransform()))
+    return result
+
+
+def pick_cut_targets(exclude_ids):
+    """Let the user click, in the model, the elements the void should
+    cut - only cuttable elements are selectable."""
+    refs = uidoc.Selection.PickObjects(
+        ObjectType.Element, CuttableFilter(exclude_ids),
+        "Select the elements to cut with the void, then Finish")
+    targets = []
+    for r in refs:
+        el = doc.GetElement(r.ElementId)
+        if el is not None:
+            targets.append(el)
+    return targets
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +201,11 @@ def extract_solids(element, transform=None):
     opt.IncludeNonVisibleObjects = False
 
     solids = []
-    geo = element.get_Geometry(opt)
+    try:
+        geo = element.get_Geometry(opt)
+    except Exception as ex:
+        logger.debug('geometry failed on %s: %s', eid_value(element.Id), ex)
+        return solids
     if geo is not None:
         _walk(geo, solids)
 
@@ -253,7 +320,7 @@ def find_generic_model_template():
 def build_void_family(solids_at_origin, family_name):
     """Create, save and load a Generic Model family whose only geometry
     is the given solids as VOIDS, with 'Cut with Voids When Loaded'
-    enabled. Returns the loaded FamilySymbol (or None)."""
+    enabled. Returns (FamilySymbol_or_None, voids_created)."""
     template = find_generic_model_template()
     fam_doc = app.NewFamilyDocument(template)
 
@@ -326,74 +393,30 @@ def place_void_instance(symbol, location):
 
 
 # ---------------------------------------------------------------------------
-# cut targets
-# ---------------------------------------------------------------------------
-
-def find_cuttable_targets(solids, exclude_ids):
-    """Elements of THIS model that intersect any of the solids (host
-    coords) and that Revit allows to be cut with a void."""
-    found = {}
-    for s in solids:
-        try:
-            sfilter = ElementIntersectsSolidFilter(s)
-        except Exception as ex:
-            logger.debug('intersect filter failed: %s', ex)
-            continue
-        collector = FilteredElementCollector(doc)\
-            .WhereElementIsNotElementType()\
-            .WherePasses(sfilter)
-        for el in collector:
-            key = eid_value(el.Id)
-            if key in found or key in exclude_ids:
-                continue
-            if isinstance(el, RevitLinkInstance):
-                continue
-            try:
-                if InstanceVoidCutUtils.CanBeCutWithVoid(el):
-                    found[key] = el
-            except Exception:
-                continue
-    return list(found.values())
-
-
-def choose_targets(candidates):
-    """Themed multi-select list of the intersecting cuttable elements."""
-    name_map = {}
-    for el in candidates:
-        try:
-            cat = el.Category.Name if el.Category else "?"
-        except Exception:
-            cat = "?"
-        label = "{} : {} [{}]".format(cat, el.Name, eid_value(el.Id))
-        name_map[label] = el
-
-    chosen = select_from_dict(
-        name_map,
-        title=TITLE,
-        label="Cut which intersecting elements?",
-        button_name="Cut",
-        version=__version__,
-        SelectMultiple=True,
-    )
-    return chosen or []
-
-
-# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
 try:
     try:
-        element, link_transform, is_linked = pick_source_element()
+        picked = pick_source_elements()
     except OperationCanceledException:
         script.exit()
 
-    if element is None:
+    if not picked:
         forms.alert("Nothing selected.", exitscript=True)
 
-    solids = extract_solids(element, link_transform)
+    # --- harvest the void geometry ------------------------------------
+    solids = []
+    no_geometry = []
+    for el, tf in picked:
+        el_solids = extract_solids(el, tf)
+        if el_solids:
+            solids.extend(el_solids)
+        else:
+            no_geometry.append(el)
+
     if not solids:
-        forms.alert("The selected element has no usable solid geometry.",
+        forms.alert("The selected element(s) have no usable solid geometry.",
                     exitscript=True)
     solids = union_solids(solids)
 
@@ -404,31 +427,26 @@ try:
     solids_at_origin = [SolidUtils.CreateTransformed(s, to_origin)
                         for s in solids]
 
-    exclude_ids = set()
-    if not is_linked:
-        exclude_ids.add(eid_value(element.Id))
+    # host-model sources must not be offered as things to cut
+    exclude_ids = set(eid_value(el.Id) for el, tf in picked if tf is None)
 
-    candidates = find_cuttable_targets(solids, exclude_ids)
+    # --- pick what to cut, directly in the model ----------------------
+    try:
+        targets = pick_cut_targets(exclude_ids)
+    except OperationCanceledException:
+        script.exit()
+    if not targets:
+        forms.alert("No elements selected to cut - nothing was changed.",
+                    exitscript=True)
 
     report = ADAReport(TITLE)
-    source_label = "{} [{}]{}".format(
-        element.Name, eid_value(element.Id),
-        " (in link: {})".format(element.Document.Title) if is_linked else "")
-    report.line("Source element: <b>{}</b>".format(source_label))
-    report.line("Void solids (after union): <b>{}</b>".format(len(solids)))
+    report.line("Void source: <b>{}</b> element(s), {} void solid(s) "
+                "after union".format(len(picked), len(solids)))
+    for el in no_geometry:
+        report.warn("Source element <b>{}</b> [{}] has no solid geometry, "
+                    "skipped.".format(el.Name, eid_value(el.Id)))
 
-    if not candidates:
-        report.warn("No cuttable element of this model intersects the "
-                    "selected element's geometry - nothing to cut.")
-        report.flush()
-        script.exit()
-
-    targets = choose_targets(candidates)
-    if not targets:
-        forms.alert("No elements chosen - nothing was cut.", exitscript=True)
-
-    family_name = "ADA_VoidCut_{}_{}".format(
-        eid_value(element.Id), datetime.now().strftime("%H%M%S"))
+    family_name = "ADA_VoidCut_{}".format(datetime.now().strftime("%H%M%S"))
 
     cut_ok = []
     cut_failed = []
