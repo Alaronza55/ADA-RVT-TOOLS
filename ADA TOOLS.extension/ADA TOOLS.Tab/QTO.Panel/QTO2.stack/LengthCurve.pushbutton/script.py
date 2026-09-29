@@ -112,18 +112,6 @@ def get_solid_fill_pattern_id():
     return DB.ElementId.InvalidElementId
 
 
-def clear_old_markers():
-    old_ids = []
-    for ds in DB.FilteredElementCollector(doc).OfClass(DB.DirectShape):
-        try:
-            if ds.Name in (MARKER_NAME, TEXT_MARKER_NAME):
-                old_ids.append(ds.Id)
-        except Exception:
-            pass
-    if old_ids:
-        doc.Delete(List[DB.ElementId](old_ids))
-
-
 def box_faces(origin, u, v, n, x0, x1, y0, y1, z0, z1):
     """Return the 6 quad faces of a box, in the local (u, v, n) frame
     rooted at `origin`: x along u, y along v, z along n."""
@@ -670,7 +658,6 @@ try:
         text_failed = 0
         try:
             with revit.Transaction("QTO Curve Length Marker"):
-                clear_old_markers()
                 view = doc.ActiveView
                 try:
                     facing_normal = view.ViewDirection.Normalize()

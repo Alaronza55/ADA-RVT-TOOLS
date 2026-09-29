@@ -247,18 +247,6 @@ def pick_visible_face(face_candidates, view_normal):
     return center, normal
 
 
-def clear_old_markers():
-    old_ids = []
-    for ds in DB.FilteredElementCollector(doc).OfClass(DB.DirectShape):
-        try:
-            if ds.Name in (MARKER_NAME, TEXT_MARKER_NAME):
-                old_ids.append(ds.Id)
-        except Exception:
-            pass
-    if old_ids:
-        doc.Delete(List[DB.ElementId](old_ids))
-
-
 def get_solid_fill_pattern_id():
     for fp in DB.FilteredElementCollector(doc).OfClass(DB.FillPatternElement):
         try:
@@ -572,8 +560,6 @@ try:
         text_failed = 0
         try:
             with revit.Transaction("QTO Volume Marker"):
-                clear_old_markers()
-
                 for all_triangles, label_point, label_normal, volume_m3 in markers:
                     create_volume_marker(all_triangles)
                     drawn += 1

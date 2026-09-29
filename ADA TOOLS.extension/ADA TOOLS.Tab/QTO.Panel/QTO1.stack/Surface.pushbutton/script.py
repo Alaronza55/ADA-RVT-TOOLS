@@ -147,18 +147,6 @@ def offset_triangles(triangles, normal, offset):
     return [tuple(p.Add(shift) for p in tri) for tri in triangles]
 
 
-def clear_old_markers():
-    old_ids = []
-    for ds in DB.FilteredElementCollector(doc).OfClass(DB.DirectShape):
-        try:
-            if ds.Name in (MARKER_NAME, TEXT_MARKER_NAME):
-                old_ids.append(ds.Id)
-        except Exception:
-            pass
-    if old_ids:
-        doc.Delete(List[DB.ElementId](old_ids))
-
-
 def get_solid_fill_pattern_id():
     for fp in DB.FilteredElementCollector(doc).OfClass(DB.FillPatternElement):
         try:
@@ -434,7 +422,6 @@ try:
         text_failed = 0
         try:
             with revit.Transaction("QTO Face Plane Marker"):
-                clear_old_markers()
                 for triangles, centroid, normal, area_m2 in markers:
                     create_plane_marker(triangles)
                     drawn += 1
