@@ -2,21 +2,22 @@
 __doc__ = """Copy the crop region of one viewport to other viewports on the
 same sheet.
 
-  1. select the source viewport on the sheet (or select it before
-     launching the tool) - its crop region is saved,
-  2. pick one or more of the other viewports of the sheet from the
-     list,
+  1. tick the reference viewport in the list of the active sheet's
+     viewports - its crop region is saved,
+  2. tick one or more of the other viewports of the sheet,
   3. the saved crop region is applied to all of them.
 
 Rectangular crops (rotated or not) and custom-shaped crops are both
 copied, at the same place in the model. The crop is turned on in the
-target views if it was off. On Revit 2022+ each target viewport is
-then moved back so the model stays where it was on the sheet.
+target views if it was off. If a target's crop is driven by a Scope
+Box, its Scope Box is set to None so the copied crop overrides it.
+On Revit 2022+ each target viewport is then moved back so the model
+stays where it was on the sheet.
 
 Views are skipped (and listed in the report) when they look in a
-different direction than the source (e.g. a section vs a plan), when
-their crop is driven by a Scope Box, or when the source has a split
-crop region. The whole change is one undoable transaction."""
+different direction than the reference (e.g. a section vs a plan).
+A reference with a split crop region cannot be copied. The whole
+change is one undoable transaction."""
 __title__ = "Copy Crop\nRegion"
 __version__ = "Version 1.0"
 __author__ = "ADA"
@@ -24,14 +25,11 @@ __author__ = "ADA"
 import clr
 
 clr.AddReference('RevitAPI')
-clr.AddReference('RevitAPIUI')
 
 from Autodesk.Revit.DB import (
     BoundingBoxXYZ, BuiltInParameter, CurveLoop, ElementId, SubTransaction,
-    Transaction, Transform, View3D, ViewSheet, ViewType, Viewport, XYZ
+    Transaction, Transform, View3D, ViewSheet, ViewType, XYZ
 )
-from Autodesk.Revit.UI.Selection import ISelectionFilter, ObjectType
-from Autodesk.Revit.Exceptions import OperationCanceledException
 
 from pyrevit import forms, revit, script
 
@@ -41,20 +39,11 @@ from GUI.forms import select_from_dict
 from GUI.ReportTheme import ADAReport
 
 doc = revit.doc
-uidoc = revit.uidoc
 
 TITLE = __title__.replace("\n", " ")
 
 NO_CROP_TYPES = (ViewType.DraftingView, ViewType.Legend, ViewType.Rendering,
                  ViewType.DrawingSheet, ViewType.Report)
-
-
-class ViewportFilter(ISelectionFilter):
-    def AllowElement(self, element):
-        return isinstance(element, Viewport)
-
-    def AllowReference(self, reference, point):
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -78,10 +67,17 @@ def croppable(view):
     return True
 
 
-def scope_box_driven(view):
+def clear_scope_box(view):
+    """Set the view's Scope Box to None. Returns the removed scope box's
+    name, or None if the view had no scope box."""
     param = view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)
-    return (param is not None
-            and param.AsElementId() != ElementId.InvalidElementId)
+    if param is None or param.AsElementId() == ElementId.InvalidElementId:
+        return None
+    scope_box = doc.GetElement(param.AsElementId())
+    name = scope_box.Name if scope_box is not None else "?"
+    if not param.Set(ElementId.InvalidElementId):
+        raise Exception("could not remove the Scope Box '{}'".format(name))
+    return name
 
 
 def model_to_sheet(viewport):
@@ -151,30 +147,34 @@ class SavedCrop(object):
 # user input
 # ---------------------------------------------------------------------------
 
-def pick_source():
-    preselected = [doc.GetElement(eid)
-                   for eid in uidoc.Selection.GetElementIds()]
-    viewports = [el for el in preselected if isinstance(el, Viewport)]
-    if len(viewports) == 1:
-        return viewports[0]
-
-    try:
-        ref = uidoc.Selection.PickObject(
-            ObjectType.Element, ViewportFilter(),
-            "Select the viewport whose crop region should be copied")
-    except OperationCanceledException:
-        script.exit()
-    return doc.GetElement(ref.ElementId)
+def croppable_viewports(sheet):
+    viewports = [doc.GetElement(vp_id) for vp_id in sheet.GetAllViewports()]
+    return [vp for vp in viewports if croppable(view_of(vp))]
 
 
-def pick_targets(sheet, source):
+def pick_source(viewports):
     options = {}
-    for vp_id in sheet.GetAllViewports():
-        if vp_id == source.Id:
-            continue
-        vp = doc.GetElement(vp_id)
-        if croppable(view_of(vp)):
-            options[viewport_label(vp)] = vp
+    for vp in viewports:
+        label = viewport_label(vp)
+        if not view_of(vp).CropBoxActive:
+            label += "  - crop off"
+        options[label] = vp
+
+    chosen = select_from_dict(
+        options,
+        title=TITLE,
+        label="Tick the reference viewport (its crop region is copied):",
+        button_name="Next",
+        version=__version__,
+        SelectMultiple=False)
+    if not chosen:
+        script.exit()
+    return chosen[0]
+
+
+def pick_targets(viewports, source):
+    options = {viewport_label(vp): vp for vp in viewports
+               if vp.Id != source.Id}
     if not options:
         forms.alert("There are no other croppable viewports on this sheet.",
                     title=TITLE, exitscript=True)
@@ -201,12 +201,14 @@ def main():
         forms.alert("Open a sheet first - the viewports must be on the "
                     "active sheet.", title=TITLE, exitscript=True)
 
-    source = pick_source()
-    source_view = view_of(source)
-    if not croppable(source_view):
-        forms.alert("'{}' has no crop region ({}).".format(
-                    source_view.Name, source_view.ViewType),
+    viewports = croppable_viewports(sheet)
+    if len(viewports) < 2:
+        forms.alert("This sheet needs at least two viewports with a crop "
+                    "region (plans, sections, elevations...).",
                     title=TITLE, exitscript=True)
+
+    source = pick_source(viewports)
+    source_view = view_of(source)
     if not source_view.CropBoxActive:
         forms.alert("The crop region of '{}' is turned off - turn it on and "
                     "set it first.".format(source_view.Name),
@@ -218,11 +220,11 @@ def main():
                     "copied.".format(source_view.Name),
                     title=TITLE, exitscript=True)
 
-    targets = pick_targets(sheet, source)
+    targets = pick_targets(viewports, source)
 
     report = ADAReport(TITLE)
     report.line("Sheet: <b>{} - {}</b>".format(sheet.SheetNumber, sheet.Name))
-    report.line("Source: <b>{}</b> &nbsp;({} crop)".format(
+    report.line("Reference: <b>{}</b> &nbsp;({} crop)".format(
         viewport_label(source),
         "custom-shaped" if saved.is_shape else "rectangular"))
 
@@ -237,10 +239,7 @@ def main():
             if not view.ViewDirection.Normalize().IsAlmostEqualTo(
                     saved.direction, 1e-6):
                 rows.append([label, "Skipped - looks in a different "
-                                    "direction than the source"])
-                continue
-            if scope_box_driven(view):
-                rows.append([label, "Skipped - crop is driven by a Scope Box"])
+                                    "direction than the reference"])
                 continue
 
             anchor_before = None
@@ -254,12 +253,18 @@ def main():
                 was_pinned = vp.Pinned
                 if was_pinned:
                     vp.Pinned = False
+                removed_scope_box = clear_scope_box(view)
                 view.CropBoxActive = True
                 saved.apply(view)
                 doc.Regenerate()
 
+                notes = ""
+                if removed_scope_box:
+                    notes += " (Scope Box '{}' set to None)".format(
+                        removed_scope_box)
+
                 # keep the model where it was on the sheet
-                kept = ""
+                kept = notes
                 if anchor_before is not None:
                     to_sheet = model_to_sheet(vp)
                     if to_sheet is not None:
@@ -267,7 +272,7 @@ def main():
                         drift = XYZ(drift.X, drift.Y, 0)
                         if drift.GetLength() > 1e-9:
                             vp.SetBoxCenter(vp.GetBoxCenter() + drift)
-                        kept = " (model kept in place on the sheet)"
+                        kept += " (model kept in place on the sheet)"
                 if was_pinned:
                     vp.Pinned = True
                 sub.Commit()
