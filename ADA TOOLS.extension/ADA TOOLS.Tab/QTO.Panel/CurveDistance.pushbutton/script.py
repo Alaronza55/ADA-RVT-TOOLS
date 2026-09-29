@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
 __doc__ = """Pick two curves (in the current model and/or in a linked model)
-and get the shortest distance between them.
+and get the distance between them.
 
 Curves are picked the same way as in "Get Length (Curve)": edges of
 solid geometry (walls, pipes, framing...) as well as Model Lines /
-Detail Lines / Reference Lines. For two parallel edges the result is
-their perpendicular distance; otherwise it is the shortest distance
-between any point of the first curve and any point of the second.
+Detail Lines / Reference Lines. The distance is measured from the
+MIDPOINT of the shorter of the two curves to the closest point of the
+other curve - for two parallel edges that is their perpendicular
+distance, with the arrow centred on the shorter edge.
 
-Visualization: a blue double-headed arrow is drawn between the two
-closest points (lifted slightly toward the view so it is not hidden
-in the surface), with short witness lines back to the curves and a
-blue 3D digit readout of the distance in meters next to it.
+Visualization: a blue double-headed arrow is drawn from that midpoint
+to the other curve (lifted slightly toward the view so it is not
+hidden in the surface), with short witness lines back to the curves
+and a blue 3D digit readout of the distance in meters next to it.
 
 Markers from earlier runs are kept - measure as many pairs as you
 like; use "Clear QTO Markers" to remove them all."""
@@ -41,29 +42,32 @@ SOURCE_CURRENT = "Both in Current Model"
 SOURCE_LINKED = "Both in Linked Model"
 SOURCE_MIXED = "1st Current, 2nd Linked"
 
-ARROWHEAD_LENGTH = 0.35        # feet
-ARROWHEAD_RADIUS = 0.13        # feet
+# Size of the whole marker (arrow + digits) relative to the other QTO tools
+MARKER_SCALE = 0.5
+
+ARROWHEAD_LENGTH = 0.35 * MARKER_SCALE   # feet
+ARROWHEAD_RADIUS = 0.13 * MARKER_SCALE   # feet
 ARROWHEAD_SIDES = 16
-SHAFT_RADIUS = 0.045           # feet
+SHAFT_RADIUS = 0.045 * MARKER_SCALE      # feet
 SHAFT_SIDES = 12
-WITNESS_RADIUS = 0.03          # feet
+WITNESS_RADIUS = 0.03 * MARKER_SCALE     # feet
 WITNESS_SIDES = 8
-ARROW_LIFT = 0.15              # feet, toward the viewer so the arrow is not buried in the face
-TEXT_STANDOFF = 0.6            # feet, sideways (in the view plane) from the arrow's middle
-TOUCH_TOL = 1e-4               # feet, below this the curves are considered touching
+ARROW_LIFT = 0.15 * MARKER_SCALE         # feet, toward the viewer so the arrow is not buried in the face
+TEXT_STANDOFF = 0.6 * MARKER_SCALE       # feet, sideways (in the view plane) from the arrow's middle
+TOUCH_TOL = 1e-4                         # feet, below this the curves are considered touching
 
 MARKER_COLOR = DB.Color(30, 90, 210)     # blue
 MARKER_LINE_COLOR = DB.Color(0, 0, 0)    # black edges
 DIGIT_COLOR = DB.Color(30, 90, 210)      # blue, matches the arrow
-DIGIT_OFFSET = 0.05                      # feet, nudge digits toward the viewer
+DIGIT_OFFSET = 0.05 * MARKER_SCALE       # feet, nudge digits toward the viewer
 
 # --- 7-segment digit geometry (same technique as Get Length / Get Surface) -
-DIGIT_W = 0.95
-DIGIT_H = 1.75
-STROKE = 0.24
-DIGIT_GAP = 0.30
-DOT_W = 0.42
-DEPTH = 0.13
+DIGIT_W = 0.95 * MARKER_SCALE
+DIGIT_H = 1.75 * MARKER_SCALE
+STROKE = 0.24 * MARKER_SCALE
+DIGIT_GAP = 0.30 * MARKER_SCALE
+DOT_W = 0.42 * MARKER_SCALE
+DEPTH = 0.13 * MARKER_SCALE
 
 SEGMENT_RECTS = {
     'A': (STROKE * 0.5, DIGIT_H - STROKE, DIGIT_W - STROKE * 0.5, DIGIT_H),
@@ -314,8 +318,8 @@ def find_curve_at_point(element, point):
 
 
 def pick_curve(linked, ordinal):
-    """Pick one curve; returns (points_in_host_coords, curve_length_ft,
-    description)."""
+    """Pick one curve; returns (points_in_host_coords, midpoint_in_host_coords,
+    curve_length_ft, description)."""
     if linked:
         ref = uidoc.Selection.PickObject(
             UI.Selection.ObjectType.LinkedElement,
@@ -346,9 +350,11 @@ def pick_curve(linked, ordinal):
                     exitscript=True)
 
     points = list(curve.Tessellate())
+    midpoint = curve.Evaluate(0.5, True)
     if transform is not None:
         points = [transform.OfPoint(p) for p in points]
-    return points, curve.Length, desc
+        midpoint = transform.OfPoint(midpoint)
+    return points, midpoint, curve.Length, desc
 
 
 # ---------------------------------------------------------------------------
@@ -391,15 +397,14 @@ def closest_points_segments(p1, q1, p2, q2):
     return p1.Add(d1.Multiply(s)), p2.Add(d2.Multiply(t))
 
 
-def closest_points_polylines(pts_a, pts_b):
-    best = None
-    for i in range(len(pts_a) - 1):
-        for j in range(len(pts_b) - 1):
-            ca, cb = closest_points_segments(pts_a[i], pts_a[i + 1],
-                                             pts_b[j], pts_b[j + 1])
-            d = ca.DistanceTo(cb)
-            if best is None or d < best[2]:
-                best = (ca, cb, d)
+def closest_point_on_polyline(point, pts):
+    """Closest point to `point` on the polyline `pts`."""
+    best, best_d = None, None
+    for i in range(len(pts) - 1):
+        _, c = closest_points_segments(point, point, pts[i], pts[i + 1])
+        d = point.DistanceTo(c)
+        if best_d is None or d < best_d:
+            best, best_d = c, d
     return best
 
 
@@ -422,10 +427,17 @@ try:
     first_linked = source == SOURCE_LINKED
     second_linked = source in (SOURCE_LINKED, SOURCE_MIXED)
 
-    pts_a, len_a, desc_a = pick_curve(first_linked, "first")
-    pts_b, len_b, desc_b = pick_curve(second_linked, "second")
+    pts_a, mid_a, len_a, desc_a = pick_curve(first_linked, "first")
+    pts_b, mid_b, len_b, desc_b = pick_curve(second_linked, "second")
 
-    pa, pb, dist = closest_points_polylines(pts_a, pts_b)
+    # measure from the midpoint of the shorter curve to the other curve
+    if len_a <= len_b:
+        pa, from_label = mid_a, "1st"
+        pb = closest_point_on_polyline(pa, pts_b)
+    else:
+        pa, from_label = mid_b, "2nd"
+        pb = closest_point_on_polyline(pa, pts_a)
+    dist = pa.DistanceTo(pb)
     dist_m = dist * 0.3048
     delta = pb.Subtract(pa)
     horizontal_m = math.sqrt(delta.X ** 2 + delta.Y ** 2) * 0.3048
@@ -437,7 +449,9 @@ try:
                  [["1st", desc_a, "{:.2f} m".format(len_a * 0.3048)],
                   ["2nd", desc_b, "{:.2f} m".format(len_b * 0.3048)]])
 
-    report.subheader("Shortest Distance")
+    report.subheader("Distance")
+    report.line("Measured from the midpoint of the shorter curve ({}) to the "
+                "closest point of the other curve.".format(from_label))
     report.line("Distance: <b>{:.3f} m</b> ({:.0f} mm)".format(dist_m, dist * 304.8))
     report.line("Horizontal component: {:.3f} m &nbsp;|&nbsp; Vertical component: "
                 "{:.3f} m".format(horizontal_m, vertical_m))
