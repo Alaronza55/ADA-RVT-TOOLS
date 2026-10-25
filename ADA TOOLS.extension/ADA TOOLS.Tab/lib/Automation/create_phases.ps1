@@ -17,7 +17,8 @@ param(
     [string]$LogFile,
     [string]$Mode = 'create',
     [int]$TimeoutSec = 60,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$IgnoreGridControl   # test switch: behave as if the grid were not exposed
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,9 +46,10 @@ $CT   = [System.Windows.Automation.ControlType]
 $Tree = [System.Windows.Automation.TreeScope]
 $True_ = [System.Windows.Automation.Condition]::TrueCondition
 
-# Button captions per Revit UI language (first match wins)
-$INSERT_AFTER = @('Insert After', 'Insérer après', 'Inserer apres', 'Danach einfügen',
-                  'Nach einfügen', 'Inserisci dopo', 'Insertar después', 'Invoegen na')
+# Caption of the "After" button of the dialog's "Insert" group, per Revit UI
+# language (exact match, '&' accelerators ignored)
+$INSERT_AFTER = @('After', 'Insert After', 'Après', 'Apres', 'Insérer après',
+                  'Danach', 'Nach', 'Dopo', 'Después', 'Despues', 'Na', 'Po')
 
 function Log([string]$msg) {
     Add-Content -LiteralPath $LogFile -Value ('{0:HH:mm:ss.fff}  {1}' -f (Get-Date), $msg) -Encoding UTF8
@@ -116,20 +118,37 @@ function Find-PhasingDialog {
     return $null
 }
 
-function Find-Grid($dialog) {
-    # biggest data-like control that is not the whole dialog
-    $dr = $dialog.Current.BoundingRectangle
+function Find-Grid($dialog, $afterButton) {
+    # biggest data-like control that does NOT contain the After button
+    # (that excludes the dialog itself and the tab page around the grid)
+    $ar = $afterButton.Current.BoundingRectangle
+    $ax = $ar.X + $ar.Width / 2; $ay = $ar.Y + $ar.Height / 2
     $best = $null; $bestArea = 0
     $types = @($CT::DataGrid, $CT::Table, $CT::List, $CT::Custom, $CT::Pane)
     foreach ($el in $dialog.FindAll($Tree::Descendants, $True_)) {
         $c = $el.Current
         if ($types -notcontains $c.ControlType) { continue }
         $r = $c.BoundingRectangle
+        if ($r.Width -le 0 -or $r.Height -le 0) { continue }
+        if ($ax -ge $r.X -and $ax -le $r.X + $r.Width -and
+            $ay -ge $r.Y -and $ay -le $r.Y + $r.Height) { continue }
+        if ($r.X + $r.Width -gt $ar.X) { continue }   # grid is left of the buttons
         $area = $r.Width * $r.Height
-        if ($area -le 0 -or $area -ge ($dr.Width * $dr.Height * 0.8)) { continue }
         if ($area -gt $bestArea) { $best = $el; $bestArea = $area }
     }
     return $best
+}
+
+function Get-FallbackGridRect($dialog, $afterButton) {
+    # Revit layout: grid on the left, Insert Before/After on the right,
+    # OK/Cancel at the bottom
+    $dr = $dialog.Current.BoundingRectangle
+    $ar = $afterButton.Current.BoundingRectangle
+    $left = $dr.X + $dr.Width * 0.03
+    $right = $ar.X - $dr.Width * 0.03
+    $top = $ar.Y - $ar.Height * 1.6
+    $bottom = $dr.Y + $dr.Height * 0.85
+    return New-Object System.Windows.Rect($left, $top, ($right - $left), ($bottom - $top))
 }
 
 function Get-NameCells($grid) {
@@ -144,9 +163,8 @@ function Get-NameCells($grid) {
     return $result
 }
 
-function Find-SelectedRowY($grid) {
-    # screen-capture the grid and find the highlighted (selected) row band
-    $r = $grid.Current.BoundingRectangle
+function Find-SelectedRowY($r) {
+    # screen-capture the grid area and find the highlighted (selected) row band
     $w = [int]$r.Width; $h = [int]$r.Height
     if ($w -lt 20 -or $h -lt 20) { return $null }
     $bmp = New-Object System.Drawing.Bitmap $w, $h
@@ -154,17 +172,18 @@ function Find-SelectedRowY($grid) {
     $g.CopyFromScreen([int]$r.X, [int]$r.Y, 0, 0, $bmp.Size)
     $g.Dispose()
 
+    # a row is "selected" when most of it is painted (Revit: black, other
+    # grids: blue) - normal rows are white with sparse text, the header and
+    # grid lines are light grey / 1 px
     $x0 = [int]($w * 0.15); $x1 = [int]($w * 0.85)
     $rowsHit = @()
     for ($y = 0; $y -lt $h; $y++) {
-        $colored = 0; $samples = 0
+        $painted = 0; $samples = 0
         for ($x = $x0; $x -lt $x1; $x += 4) {
             $p = $bmp.GetPixel($x, $y); $samples++
-            $isWhite = ($p.R -gt 235 -and $p.G -gt 235 -and $p.B -gt 235)
-            $isGrey  = ([Math]::Abs($p.R - $p.G) -lt 12 -and [Math]::Abs($p.G - $p.B) -lt 12)
-            if (-not $isWhite -and -not $isGrey) { $colored++ }
+            if (-not ($p.R -gt 200 -and $p.G -gt 200 -and $p.B -gt 200)) { $painted++ }
         }
-        if ($samples -gt 0 -and ($colored / $samples) -gt 0.5) { $rowsHit += $y }
+        if ($samples -gt 0 -and ($painted / $samples) -gt 0.6) { $rowsHit += $y }
     }
     $bmp.Dispose()
     if ($rowsHit.Count -lt 6) { return $null }
@@ -226,8 +245,16 @@ try {
     Log ("{0} phase name(s) to create" -f $names.Count)
 
     $hwnd = [IntPtr]$dialog.Current.NativeWindowHandle
-    $grid = Find-Grid $dialog
-    if ($grid) { Log ('Grid: ' + (Describe $grid)) } else { Log 'Grid: not found' }
+    $grid = if ($IgnoreGridControl) { $null } else { Find-Grid $dialog $found.InsertAfter }
+    if ($grid -and $grid.Current.BoundingRectangle.Height -gt 60) {
+        $gridRect = $grid.Current.BoundingRectangle
+        Log ('Grid: ' + (Describe $grid))
+    } else {
+        $grid = $null
+        $gridRect = Get-FallbackGridRect $dialog $found.InsertAfter
+        Log ('Grid: not exposed - using the area left of the buttons: {0},{1},{2},{3}' -f
+             [int]$gridRect.X, [int]$gridRect.Y, [int]$gridRect.Width, [int]$gridRect.Height)
+    }
 
     Log ('Insert After: ' + (Describe $found.InsertAfter))
     $created = 0; $failed = @()
@@ -257,11 +284,12 @@ try {
             }
         }
         # strategy 2: click the Name cell of the highlighted (new) row and paste
-        if (-not $done -and $grid) {
-            $y = Find-SelectedRowY $grid
+        if (-not $done) {
+            $r = $gridRect
+            $y = Find-SelectedRowY $r
             if ($y) {
-                $r = $grid.Current.BoundingRectangle
-                $x = [int]($r.X + $r.Width * 0.30)
+                # Revit's Name column covers ~5-30 % of the grid width
+                $x = [int]($r.X + $r.Width * 0.17)
                 [void][AdaNative]::SetForegroundWindow($hwnd)
                 [AdaNative]::Click($x, $y)
                 Start-Sleep -Milliseconds 250
