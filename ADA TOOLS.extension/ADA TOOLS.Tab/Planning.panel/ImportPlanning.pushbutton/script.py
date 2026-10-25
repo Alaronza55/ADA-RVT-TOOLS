@@ -11,10 +11,18 @@ optionally, the contractor doing each phase.
 
 PHASES: the Revit API cannot create (or rename) phases. Phases of the
 planning that already exist in the project (same name) are used as
-they are. For the missing ones, their names are copied to the
-clipboard and the Phases dialog can be opened, so you can add them
-(Insert, then paste the names); then run Import Planning again - the
-last file, sheet and ranges are remembered.
+they are. The missing ones can be CREATED AUTOMATICALLY: the tool
+opens Manage > Phases and a helper drives the dialog (Insert After +
+types each name, in planning order, after the selected phase). Do not
+touch the mouse / keyboard until the ADA message appears, then check
+the list and click OK (Cancel discards everything). Run Import
+Planning again to fill the Contractor parameter for the new phases -
+the last file, sheet and ranges are remembered.
+
+Phase names are cleaned: line breaks become " - " and characters
+Revit does not accept in names ( \\ : { } [ ] | ; < > ? ` ~ ) are
+removed. SHIFT+CLICK the button to only record the Phasing dialog's
+structure (diagnostic log, if the automation does not work).
 
 CONTRACTOR: every element whose Phase Created is one of the planning
 phases gets that phase's contractor in its "Contractor" parameter.
@@ -37,6 +45,7 @@ from Autodesk.Revit.DB import (
     FilteredElementCollector, Transaction
 )
 from Autodesk.Revit.UI import PostableCommand, RevitCommandId
+from System.Diagnostics import Process, ProcessStartInfo, ProcessWindowStyle
 from System.Windows.Forms import Clipboard
 
 from pyrevit import forms, revit, script
@@ -63,7 +72,56 @@ PARAM_CREATE = "Create & fill 'Contractor'"
 PARAM_FILL = "Fill existing 'Contractor'"
 PARAM_SKIP = "Phases only"
 
+ADA_DATA_DIR = os.path.join(os.environ.get("APPDATA", ""), "ADA Tools")
+AUTOMATION_PS1 = os.path.normpath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "lib", "Automation",
+    "create_phases.ps1"))
+NAMES_FILE = os.path.join(ADA_DATA_DIR, "phases_to_create.txt")
+LOG_FILE = os.path.join(ADA_DATA_DIR, "phases_automation_log.txt")
+
+MISSING_AUTO = "Create them automatically"
+MISSING_MANUAL = "Copy names & open Phases"
+MISSING_CLOSE = "Close"
+
+FORBIDDEN_CHARS = u'\\:{}[]|;<>?`~'
+
 config = script.get_config()
+
+
+def clean_phase_name(text):
+    """One-line phase name Revit accepts: line breaks -> ' - ' (leading
+    list dashes dropped), forbidden characters removed, spaces squeezed."""
+    lines = [line.strip().lstrip(u"-•*").strip()
+             for line in text.splitlines()]
+    name = u" - ".join(line for line in lines if line)
+    name = u"".join(ch for ch in name if ch not in FORBIDDEN_CHARS)
+    return u" ".join(name.split())
+
+
+def run_phasing_automation(mode, names=None):
+    """Start the UI-automation helper (separate PowerShell process), then
+    open the Phases dialog for it to drive."""
+    if not os.path.isfile(AUTOMATION_PS1):
+        forms.alert("Automation helper not found:\n{}".format(AUTOMATION_PS1),
+                    title=TITLE, exitscript=True)
+    if not os.path.isdir(ADA_DATA_DIR):
+        os.makedirs(ADA_DATA_DIR)
+    if names is not None:
+        import io
+        with io.open(NAMES_FILE, "w", encoding="utf-8") as f:
+            f.write(u"\n".join(names))
+
+    args = ('-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden '
+            '-File "{}" -RevitPid {} -NamesFile "{}" -LogFile "{}" -Mode {}'
+            .format(AUTOMATION_PS1, Process.GetCurrentProcess().Id,
+                    NAMES_FILE, LOG_FILE, mode))
+    info = ProcessStartInfo("powershell.exe", args)
+    info.UseShellExecute = False
+    info.CreateNoWindow = True
+    info.WindowStyle = ProcessWindowStyle.Hidden
+    Process.Start(info)
+    uiapp.PostCommand(
+        RevitCommandId.LookupPostableCommandId(PostableCommand.Phases))
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +193,8 @@ def ask_ranges(workbook, sheet):
                         "range has {} - they must be the same size."
                         .format(len(contractors), len(phases)), title=TITLE)
             continue
-        rows = [(p, c) for p, c in zip(phases, contractors) if p]
+        rows = [(clean_phase_name(p), c) for p, c in zip(phases, contractors)
+                if clean_phase_name(p)]
         if not rows:
             forms.alert("No phase names found in {}.".format(phase_ref),
                         title=TITLE)
@@ -269,6 +328,10 @@ def fill_contractors(contractor_by_phase_id):
 # ---------------------------------------------------------------------------
 
 def main():
+    if __shiftclick__:
+        run_phasing_automation("probe")
+        return
+
     workbook = pick_workbook()
     sheet = pick_sheet(workbook)
     rows, phase_ref, contractor_ref = ask_ranges(workbook, sheet)
@@ -335,8 +398,7 @@ def main():
     positions = [project_phases.index(p) for _, _, p in matched]
     if positions != sorted(positions):
         report.warn("The phases exist in the project in a different order "
-                    "than in the planning - reorder them in Manage > Phases "
-                    "if needed.")
+                    "than in the planning (Revit cannot reorder phases).")
 
     filled = failed = 0
     if param_mode in (PARAM_CREATE, PARAM_FILL) and matched:
@@ -358,8 +420,7 @@ def main():
     report.subheader("Planning")
     table = []
     for phase, contractor in planning:
-        status = "In project" if match(phase) else \
-            "MISSING - add it in Manage > Phases"
+        status = "In project" if match(phase) else "MISSING"
         table.append([phase, contractor or "-", status])
     report.table(["Phase", "Contractor", "Status"], table)
 
@@ -368,27 +429,29 @@ def main():
             PARAM_NAME, filled,
             ", {} could not be changed".format(failed) if failed else ""))
 
-    if missing:
-        Clipboard.SetText("\r\n".join(missing))
-        report.warn("{} phase(s) are missing. Revit cannot create phases from "
-                    "a script: their names are copied to the clipboard - add "
-                    "them in Manage > Phases, then run Import Planning again "
-                    "(file and ranges are remembered).".format(len(missing)))
-    else:
+    if not missing:
         report.success("All {} planning phase(s) exist in the project."
                        .format(len(planning)))
+        report.flush()
+        return
+
+    report.warn("{} phase(s) are missing.".format(len(missing)))
     report.flush()
 
-    if missing:
-        choice = select_from_buttons(
-            ["Open the Phases dialog", "Close"],
-            title=TITLE,
-            label="{} missing phase name(s) copied to the clipboard.".format(
-                len(missing)),
-            version=__version__)
-        if choice == "Open the Phases dialog":
-            uiapp.PostCommand(
-                RevitCommandId.LookupPostableCommandId(PostableCommand.Phases))
+    choice = select_from_buttons(
+        [MISSING_AUTO, MISSING_MANUAL, MISSING_CLOSE],
+        title=TITLE,
+        label=("{} phase(s) are missing. Create them automatically in the "
+               "Phases dialog?\nDo not touch mouse / keyboard until the ADA "
+               "message appears, then check and click OK.").format(
+                   len(missing)),
+        version=__version__)
+    if choice == MISSING_AUTO:
+        run_phasing_automation("create", missing)
+    elif choice == MISSING_MANUAL:
+        Clipboard.SetText(u"\r\n".join(missing))
+        uiapp.PostCommand(
+            RevitCommandId.LookupPostableCommandId(PostableCommand.Phases))
 
 
 if __name__ == "__main__":
