@@ -5,9 +5,10 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Title="Select"
-    Height="260" Width="320"
+    Width="320"
     MinWidth="320"
     MinHeight="260"
+    SizeToContent="Height"
     WindowStartupLocation="CenterScreen"
     HorizontalAlignment="Center"
     ShowInTaskbar="True"
@@ -88,10 +89,15 @@
 
             <Separator Background="{StaticResource border_magenta}" Margin="0,0,0,10"/>
 
-            <Label x:Name="text_label" Content="Choose an option:"
+            <Label x:Name="text_label"
                    Foreground="{StaticResource text_magenta}"
                    HorizontalAlignment="Center"
-                   Margin="0,0,0,5"/>
+                   Margin="0,0,0,5">
+                <TextBlock x:Name="text_label_block"
+                           Text="Choose an option:"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"/>
+            </Label>
 
             <!--OPTION BUTTONS - up to 4, unused ones collapsed in code-behind-->
             <Button x:Name="btn_option_0" Content="Option 1" Click="button_option_click" Height="34" Margin="5"/>

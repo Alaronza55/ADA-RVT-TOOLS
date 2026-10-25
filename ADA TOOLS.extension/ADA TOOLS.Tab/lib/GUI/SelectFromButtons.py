@@ -56,7 +56,7 @@ class SelectFromButtons(my_WPF):
         # UPDATE GUI ELEMENTS
         self.logo_icon.Source    = self.load_logo_icon()
         self.main_title.Text     = title
-        self.text_label.Content  = label
+        self.text_label_block.Text = label
         self.footer_version.Text = version
 
         option_buttons = [self.btn_option_0, self.btn_option_1,

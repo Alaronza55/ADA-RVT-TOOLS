@@ -79,9 +79,7 @@ AUTOMATION_PS1 = os.path.normpath(os.path.join(
 NAMES_FILE = os.path.join(ADA_DATA_DIR, "phases_to_create.txt")
 LOG_FILE = os.path.join(ADA_DATA_DIR, "phases_automation_log.txt")
 
-MISSING_AUTO = "Create them automatically"
-MISSING_MANUAL = "Copy names & open Phases"
-MISSING_CLOSE = "Close"
+MISSING_CANCEL = "Cancel"
 
 FORBIDDEN_CHARS = u'\\:{}[]|;<>?`~'
 
@@ -104,10 +102,10 @@ def run_phasing_automation(mode, names=None):
     if not os.path.isfile(AUTOMATION_PS1):
         forms.alert("Automation helper not found:\n{}".format(AUTOMATION_PS1),
                     title=TITLE, exitscript=True)
+    import io
     if not os.path.isdir(ADA_DATA_DIR):
         os.makedirs(ADA_DATA_DIR)
     if names is not None:
-        import io
         with io.open(NAMES_FILE, "w", encoding="utf-8") as f:
             f.write(u"\n".join(names))
 
@@ -115,11 +113,27 @@ def run_phasing_automation(mode, names=None):
             '-File "{}" -RevitPid {} -NamesFile "{}" -LogFile "{}" -Mode {}'
             .format(AUTOMATION_PS1, Process.GetCurrentProcess().Id,
                     NAMES_FILE, LOG_FILE, mode))
+    with io.open(LOG_FILE, "w", encoding="utf-8") as f:
+        f.write(u"Import Planning: starting helper ({}, {} name(s))\n"
+                u"powershell.exe {}\n".format(
+                    mode, len(names or []), args))
+
     info = ProcessStartInfo("powershell.exe", args)
     info.UseShellExecute = False
     info.CreateNoWindow = True
     info.WindowStyle = ProcessWindowStyle.Hidden
-    Process.Start(info)
+    info.RedirectStandardError = True
+    helper = Process.Start(info)
+
+    # a helper that dies at once (blocked PowerShell, missing file...) must
+    # not leave the user looking at an empty Phases dialog
+    if helper.WaitForExit(1500):
+        error = helper.StandardError.ReadToEnd()
+        forms.alert("The automation helper stopped immediately (exit code "
+                    "{}).\n\n{}\n\nLog: {}".format(
+                        helper.ExitCode, error[:800], LOG_FILE),
+                    title=TITLE, exitscript=True)
+
     uiapp.PostCommand(
         RevitCommandId.LookupPostableCommandId(PostableCommand.Phases))
 
@@ -438,20 +452,18 @@ def main():
     report.warn("{} phase(s) are missing.".format(len(missing)))
     report.flush()
 
+    Clipboard.SetText(u"\r\n".join(missing))
+    create_label = "Create {} phases automatically".format(len(missing))
     choice = select_from_buttons(
-        [MISSING_AUTO, MISSING_MANUAL, MISSING_CLOSE],
+        [create_label, MISSING_CANCEL],
         title=TITLE,
-        label=("{} phase(s) are missing. Create them automatically in the "
-               "Phases dialog?\nDo not touch mouse / keyboard until the ADA "
-               "message appears, then check and click OK.").format(
-                   len(missing)),
+        label=("{} phase(s) are missing (names copied to the clipboard).\n"
+               "The Phases dialog will open and fill itself - do not touch "
+               "mouse / keyboard until the ADA message appears, then check "
+               "and click OK.").format(len(missing)),
         version=__version__)
-    if choice == MISSING_AUTO:
+    if choice == create_label:
         run_phasing_automation("create", missing)
-    elif choice == MISSING_MANUAL:
-        Clipboard.SetText(u"\r\n".join(missing))
-        uiapp.PostCommand(
-            RevitCommandId.LookupPostableCommandId(PostableCommand.Phases))
 
 
 if __name__ == "__main__":
