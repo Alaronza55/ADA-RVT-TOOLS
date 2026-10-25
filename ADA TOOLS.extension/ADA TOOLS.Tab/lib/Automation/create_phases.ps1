@@ -112,10 +112,24 @@ function Find-PhasingDialog {
         } catch {}
         foreach ($c in $candidates) {
             $btn = Find-Button $c $INSERT_AFTER
-            if ($btn) { return @{ Dialog = $c; InsertAfter = $btn } }
+            if ($btn) {
+                # the Phasing dialog is nested inside Revit's main window:
+                # work in the window that actually owns the button
+                return @{ Dialog = (Get-OwnerWindow $btn); InsertAfter = $btn }
+            }
         }
     }
     return $null
+}
+
+function Get-OwnerWindow($el) {
+    $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $p = $walker.GetParent($el)
+    while ($null -ne $p) {
+        if ($p.Current.ControlType -eq $CT::Window) { return $p }
+        $p = $walker.GetParent($p)
+    }
+    return $el
 }
 
 function Find-Grid($dialog, $afterButton) {
@@ -123,6 +137,12 @@ function Find-Grid($dialog, $afterButton) {
     # (that excludes the dialog itself and the tab page around the grid)
     $ar = $afterButton.Current.BoundingRectangle
     $ax = $ar.X + $ar.Width / 2; $ay = $ar.Y + $ar.Height / 2
+
+    # Revit's phase grid is a "GXWND" control (seen in the Revit 2024 dialog)
+    $gx = $dialog.FindFirst($Tree::Descendants,
+        (New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'GXWND')))
+    if ($gx) { return $gx }
+
     $best = $null; $bestArea = 0
     $types = @($CT::DataGrid, $CT::Table, $CT::List, $CT::Custom, $CT::Pane)
     foreach ($el in $dialog.FindAll($Tree::Descendants, $True_)) {
