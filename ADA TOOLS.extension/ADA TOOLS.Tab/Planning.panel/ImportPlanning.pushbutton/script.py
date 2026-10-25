@@ -14,6 +14,17 @@ mouse / keyboard until the ADA message appears, then check the list
 and click OK (Cancel discards everything). The last file, sheet and
 range are remembered.
 
+PERIOD -> PHASE DESCRIPTION: for each phase row, the coloured (or
+filled) cells of its Gantt bar are found to the right of the names;
+for each one the tool goes UP its column to the first date (the date
+header of the planning). Columns with no date above them (status,
+contractor...) are ignored. The period from the first to the last day
+is written in the phase's Description, e.g.
+"20/10/2026 to 24/10/2026 (5 days)" - with the planned days and the
+number of separate periods when the bar is interrupted. New phases get
+it typed in the Phasing dialog; existing phases get it through the API
+when Revit allows it.
+
 Phase names are cleaned: line breaks become " - " and characters
 Revit does not accept in names ( \\ : { } [ ] | ; < > ? ` ~ ) are
 removed. SHIFT+CLICK the button to only record the Phasing dialog's
@@ -50,8 +61,9 @@ from pyrevit import forms, revit, script
 # (lib/Snippets/_planning.py)
 from GUI.forms import select_from_buttons, ask_for_inputs, order_list
 from GUI.ReportTheme import ADAReport
-from Snippets._planning import (ADA_DATA_DIR, clean_name, name_key,
-                                pick_sheet, pick_workbook)
+from Snippets._planning import (ADA_DATA_DIR, format_period, gantt_periods,
+                                name_key, phase_rows, pick_sheet,
+                                pick_workbook)
 
 doc = revit.doc
 uiapp = __revit__
@@ -111,8 +123,8 @@ def run_phasing_automation(mode, names=None):
 
 
 def ask_phase_range(workbook, sheet):
-    """Ask the range until it gives phase names. Returns (unique cleaned
-    names in Excel order, range string)."""
+    """Ask the range until it gives phase names. Returns ([(name, excel row)]
+    unique, in Excel order; first column right of the range; range string)."""
     phase_ref = config.get_option("last_phase_range", "A2:A20")
     while True:
         values = ask_for_inputs(
@@ -125,21 +137,49 @@ def ask_phase_range(workbook, sheet):
             script.exit()
         phase_ref = values[0].strip()
         try:
-            cells = workbook.read_range(sheet, phase_ref)
+            rows, first_col = phase_rows(workbook, sheet, phase_ref)
         except Exception as ex:
             forms.alert(str(ex), title=TITLE)
             continue
-
-        names, seen = [], set()
-        for cell in cells:
-            name = clean_name(cell)
-            if name and name_key(name) not in seen:
-                seen.add(name_key(name))
-                names.append(name)
-        if names:
-            return names, phase_ref
+        if rows:
+            return rows, first_col, phase_ref
         forms.alert("No phase names found in {}.".format(phase_ref),
                     title=TITLE)
+
+
+def description_param(phase):
+    """The phase's Description parameter, or None."""
+    from Autodesk.Revit.DB import BuiltInParameter
+    for bip_name in ("PHASE_DESCRIPTION", "ALL_MODEL_DESCRIPTION"):
+        bip = getattr(BuiltInParameter, bip_name, None)
+        if bip is not None:
+            param = phase.get_Parameter(bip)
+            if param is not None:
+                return param
+    return phase.LookupParameter("Description")
+
+
+def set_existing_descriptions(pairs):
+    """[(phase, description)] -> (set, unchanged, failed names). Writes the
+    description of phases that already exist, through the API."""
+    from Autodesk.Revit.DB import Transaction
+    done = same = 0
+    failed = []
+    with Transaction(doc, "ADA - Phase descriptions") as t:
+        t.Start()
+        for phase, text in pairs:
+            param = description_param(phase)
+            try:
+                if param is not None and param.AsString() == text:
+                    same += 1
+                elif param is None or param.IsReadOnly or not param.Set(text):
+                    failed.append(phase.Name)
+                else:
+                    done += 1
+            except Exception:
+                failed.append(phase.Name)
+        t.Commit()
+    return done, same, failed
 
 
 def main():
@@ -149,7 +189,12 @@ def main():
 
     workbook = pick_workbook(config, TITLE)
     sheet = pick_sheet(workbook, TITLE, __version__)
-    planning, phase_ref = ask_phase_range(workbook, sheet)
+    rows, first_col, phase_ref = ask_phase_range(workbook, sheet)
+
+    # period of each phase from its Gantt bar -> phase description
+    periods = gantt_periods(workbook, sheet, [r for _, r in rows], first_col)
+    description = {name: format_period(periods.get(r)) for name, r in rows}
+    planning = [name for name, _ in rows]
 
     project_phases = list(doc.Phases)
     by_key = {name_key(p.Name): p for p in project_phases}
@@ -157,9 +202,13 @@ def main():
     def match(name):
         return by_key.get(name_key(name))
 
-    items = [(u"{}   ({})".format(name, "in project" if match(name) else
-                                  "MISSING"), name)
-             for name in planning]
+    items = []
+    for name in planning:
+        label = name
+        if description[name]:
+            label += u"   |   " + description[name]
+        label += u"   ({})".format("in project" if match(name) else "MISSING")
+        items.append((label, name))
     ordered = order_list(
         items,
         title=TITLE,
@@ -190,10 +239,36 @@ def main():
         report.warn("The phases exist in the project in a different order "
                     "than in the planning (Revit cannot reorder phases).")
 
+    # descriptions of the phases that already exist (through the API)
+    existing = [(match(n), description[n]) for n in planning
+                if match(n) and description[n]]
+    if existing:
+        try:
+            done, same, failed = set_existing_descriptions(existing)
+            if done or same:
+                report.line(u"Description set on <b>{}</b> existing phase(s)"
+                            u"{}.".format(done, u" ({} already up to date)"
+                                          .format(same) if same else u""))
+            if failed:
+                report.warn(u"Revit refused the description of {} existing "
+                            u"phase(s) - type it in Manage > Phases.".format(
+                                len(failed)))
+        except Exception as ex:
+            report.warn(u"Could not set the descriptions of the existing "
+                        u"phases: {}".format(ex))
+
+    no_period = [n for n in planning if not description[n]]
     report.subheader("Phases")
-    report.table(["Phase", "Status"],
-                 [[name, "In project" if match(name) else "MISSING"]
+    report.table(["Phase", "Period (description)", "Status"],
+                 [[name, description[name] or "-",
+                   "In project" if match(name) else "MISSING"]
                   for name in planning])
+    if len(no_period) == len(planning):
+        report.warn("No period found: no coloured / filled cell with a date "
+                    "above it (going up the column) on the phase rows.")
+    elif no_period:
+        report.warn("{} phase(s) have no bar in the planning - no period."
+                    .format(len(no_period)))
 
     if not missing:
         report.success("All {} planning phase(s) exist in the project."
@@ -215,7 +290,9 @@ def main():
                "and click OK.").format(len(missing)),
         version=__version__)
     if choice == create_label:
-        run_phasing_automation("create", missing)
+        # one line per phase: name<TAB>description (typed in the dialog)
+        run_phasing_automation("create", [u"{}\t{}".format(n, description[n])
+                                          for n in missing])
 
 
 if __name__ == "__main__":

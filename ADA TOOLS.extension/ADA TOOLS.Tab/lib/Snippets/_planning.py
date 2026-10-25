@@ -85,6 +85,95 @@ def pick_sheet(workbook, title, version):
 
 
 # ---------------------------------------------------------------------------
+# planning periods (Gantt bars)
+# ---------------------------------------------------------------------------
+
+def phase_rows(workbook, sheet, ref):
+    """[(cleaned name, excel row)] for the non-empty cells of a phase range,
+    first occurrence of each name only; and the first column right of it."""
+    from Snippets._xlsx import parse_range
+    (r1, c1), (r2, c2) = parse_range(ref)
+    result, seen = [], set()
+    for r in range(r1, r2 + 1):
+        for c in range(c1, c2 + 1):
+            name = clean_name(workbook.cell_text(sheet, r, c))
+            if name and name_key(name) not in seen:
+                seen.add(name_key(name))
+                result.append((name, r))
+    return result, c2 + 1
+
+
+def gantt_periods(workbook, sheet, rows, first_col):
+    """Period of each planning row from its Gantt bar.
+
+    A cell of the row counts as planned when it is painted (background
+    colour) or holds a value, AND a date is found when going UP its column
+    (the date header of the planning). Columns without a date above them
+    (status, contractor...) are ignored.
+
+    rows: iterable of excel row numbers. Returns {row: info} for the rows
+    that have a bar, info = dict(start, end, span_days, planned_days,
+    periods)."""
+    filled = workbook.filled_cells(sheet)
+    last_col = workbook.max_column(sheet)
+
+    # rows holding a date, per column (scanned once)
+    date_rows = {}
+    for (r, c), text in workbook._cells(sheet).items():
+        if c >= first_col:
+            d = workbook.as_date(text)
+            if d is not None:
+                date_rows.setdefault(c, []).append((r, d))
+    for c in date_rows:
+        date_rows[c].sort()
+
+    def date_above(r, c):
+        best = None
+        for row, d in date_rows.get(c, ()):
+            if row < r:
+                best = d
+            else:
+                break
+        return best
+
+    result = {}
+    for r in rows:
+        dates = set()
+        for c in range(first_col, last_col + 1):
+            if (r, c) not in filled and not workbook.cell_text(sheet, r, c):
+                continue
+            d = date_above(r, c)
+            if d is not None:
+                dates.add(d)
+        if not dates:
+            continue
+        ordered = sorted(dates)
+        periods = 1 + sum(1 for a, b in zip(ordered, ordered[1:])
+                          if (b - a).days > 1)
+        result[r] = dict(start=ordered[0], end=ordered[-1],
+                         span_days=(ordered[-1] - ordered[0]).days + 1,
+                         planned_days=len(ordered), periods=periods)
+    return result
+
+
+def format_period(info):
+    """'20/10/2026 to 24/10/2026 (5 days)' - with the planned days and the
+    number of separate periods when the bar is interrupted."""
+    if not info:
+        return u""
+    fmt = lambda d: d.strftime("%d/%m/%Y")
+    if info["span_days"] == 1:
+        return u"{} (1 day)".format(fmt(info["start"]))
+    text = u"{} to {} ({} days".format(fmt(info["start"]), fmt(info["end"]),
+                                      info["span_days"])
+    if info["planned_days"] != info["span_days"]:
+        text += u", {} planned".format(info["planned_days"])
+    if info["periods"] > 1:
+        text += u", {} periods".format(info["periods"])
+    return text + u")"
+
+
+# ---------------------------------------------------------------------------
 # shared parameters
 # ---------------------------------------------------------------------------
 

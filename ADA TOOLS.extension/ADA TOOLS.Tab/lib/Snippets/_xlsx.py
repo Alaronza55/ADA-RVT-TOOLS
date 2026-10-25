@@ -81,7 +81,38 @@ class XlsxWorkbook(object):
         self._parts = self._read_parts(path)
         self._shared = self._read_shared_strings()
         self._sheet_parts = self._read_sheet_parts()   # [(name, part)]
+        self._filled_styles = self._read_filled_styles()
+        self.date1904 = self._read_date1904()
         self._cache = {}
+        self._fill_cache = {}
+
+    def _read_date1904(self):
+        xml, ns = self._xml("xl/workbook.xml")
+        pr = xml.SelectSingleNode("//m:workbookPr", ns)
+        return pr is not None and pr.GetAttribute("date1904") in ("1", "true")
+
+    def _read_filled_styles(self):
+        """Indexes of the cell styles (cellXfs) that paint a background: a
+        solid fill whose colour is not white."""
+        if "xl/styles.xml" not in self._parts:
+            return set()
+        xml, ns = self._xml("xl/styles.xml")
+        painted_fills = set()
+        for i, fill in enumerate(xml.SelectNodes("//m:fills/m:fill", ns)):
+            pattern = fill.SelectSingleNode("m:patternFill", ns)
+            if pattern is None or pattern.GetAttribute("patternType") != "solid":
+                continue
+            fg = pattern.SelectSingleNode("m:fgColor", ns)
+            rgb = fg.GetAttribute("rgb").upper() if fg is not None else ""
+            if rgb in ("FFFFFFFF", "00FFFFFF", "FFFFFF"):
+                continue
+            painted_fills.add(i)
+        styles = set()
+        for i, xf in enumerate(xml.SelectNodes("//m:cellXfs/m:xf", ns)):
+            fill_id = xf.GetAttribute("fillId")
+            if fill_id and int(fill_id) in painted_fills:
+                styles.add(i)
+        return styles
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -158,6 +189,7 @@ class XlsxWorkbook(object):
 
         xml, ns = self._xml(part)
         cells = {}
+        filled = set()
         for row_index, row in enumerate(
                 xml.SelectNodes("//m:sheetData/m:row", ns), 1):
             row_number = int(row.GetAttribute("r") or row_index)
@@ -168,6 +200,9 @@ class XlsxWorkbook(object):
                     row_number, col = parse_cell(ref)
                 else:
                     col += 1
+                style = c.GetAttribute("s")
+                if style and int(style) in self._filled_styles:
+                    filled.add((row_number, col))
                 cell_type = c.GetAttribute("t")
                 if cell_type == "inlineStr":
                     text = "".join(t.InnerText for t in
@@ -186,7 +221,34 @@ class XlsxWorkbook(object):
                 if text != "":
                     cells[(row_number, col)] = text
         self._cache[sheet_name] = cells
+        self._fill_cache[sheet_name] = filled
         return cells
+
+    def filled_cells(self, sheet_name):
+        """Set of (row, col) whose background is painted (solid, not white)."""
+        self._cells(sheet_name)
+        return self._fill_cache[sheet_name]
+
+    def cell_text(self, sheet_name, row, col):
+        return self._cells(sheet_name).get((row, col), "")
+
+    def max_column(self, sheet_name):
+        keys = list(self._cells(sheet_name).keys()) + list(self.filled_cells(sheet_name))
+        return max(c for _, c in keys) if keys else 0
+
+    def as_date(self, text):
+        """Date of a cell holding an Excel date serial (years 1990-2150),
+        or None."""
+        try:
+            serial = float(text)
+        except (TypeError, ValueError):
+            return None
+        if self.date1904:
+            serial += 1462
+        if not 32874 <= serial <= 91311:      # 1990-01-01 .. 2150-01-01
+            return None
+        import datetime
+        return datetime.date(1899, 12, 30) + datetime.timedelta(days=int(serial))
 
     def read_range(self, sheet_name, ref):
         """Values of a range, row by row, '' for empty cells."""

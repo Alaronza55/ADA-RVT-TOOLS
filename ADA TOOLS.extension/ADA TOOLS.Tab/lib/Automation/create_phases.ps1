@@ -280,7 +280,7 @@ function Type-CellText([string]$text) {
 
 # ---------------------------------------------------------------------------
 try {
-    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v6 (fast keyboard mode + careful fallback, slow x$Slow)" -Encoding UTF8
+    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v7 (fast mode + descriptions, slow x$Slow)" -Encoding UTF8
     Log "Revit PID $RevitPid - waiting for the Phasing dialog (max $TimeoutSec s)"
 
     $found = $null
@@ -306,8 +306,16 @@ try {
         exit 0
     }
 
-    $names = @(Get-Content -LiteralPath $NamesFile -Encoding UTF8 | Where-Object { $_.Trim() -ne '' })
-    Log ("{0} phase name(s) to create" -f $names.Count)
+    # one line per phase: name, or name<TAB>description
+    $names = @(); $descOf = @{}
+    foreach ($line in (Get-Content -LiteralPath $NamesFile -Encoding UTF8)) {
+        if ($line.Trim() -eq '') { continue }
+        $parts = $line -split "`t", 2
+        $names += $parts[0]
+        $descOf[$parts[0]] = $(if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' })
+    }
+    Log ("{0} phase name(s) to create, {1} with a description" -f $names.Count,
+         @($descOf.Values | Where-Object { $_ }).Count)
 
     $hwnd = [IntPtr]$dialog.Current.NativeWindowHandle
     $grid = if ($IgnoreGridControl) { $null } else { Find-Grid $dialog $found.InsertAfter }
@@ -404,6 +412,12 @@ try {
             if ($editor) { [System.Windows.Forms.SendKeys]::SendWait('{HOME}+{END}') }
             Type-CellText $name
             [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+            if ($descOf[$name]) {
+                # Tab moved to the Description cell: type the period there
+                Pause 120
+                Type-CellText $descOf[$name]
+                [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+            }
             Pause ([int](150 * $wait))
             Select-Row $neutralY
             [void](Wait-Until { $null -eq (Find-EditBox $editScope) } (1000 * $wait))
@@ -429,6 +443,21 @@ try {
         return ,$notNamed
     }
 
+    function Type-NameAndDescription([string]$name, [bool]$moveDown) {
+        # fast mode: Name cell is current. Type the name, Tab + description,
+        # then Down (+ Left to come back to the Name column of the next row)
+        Type-CellText $name
+        $desc = $descOf[$name]
+        if ($desc) {
+            [System.Windows.Forms.SendKeys]::SendWait('{TAB}'); Pause 100
+            Type-CellText $desc
+        }
+        if ($moveDown) {
+            [System.Windows.Forms.SendKeys]::SendWait('{DOWN}'); Pause 120
+            if ($desc) { [System.Windows.Forms.SendKeys]::SendWait('{LEFT}'); Pause 100 }
+        }
+    }
+
     $failed = @()
     $mode = 'careful'
     if ($names.Count -ge 3) {
@@ -437,9 +466,9 @@ try {
         Select-Row (RowY 0); Pause 150
         $h1 = Get-CellHash (RowY 1); $h2 = Get-CellHash (RowY 2)
         [AdaNative]::Click($nameX, (RowY 1)); Pause 250
-        Type-CellText $names[0]
-        [System.Windows.Forms.SendKeys]::SendWait('{DOWN}'); Pause 200
-        Type-CellText $names[1]
+        Type-NameAndDescription $names[0] $true
+        Pause 100
+        Type-NameAndDescription $names[1] $false
         [System.Windows.Forms.SendKeys]::SendWait('{TAB}'); Pause 150
         Select-Row (RowY 0)
         [void](Wait-Until { $null -eq (Find-EditBox $editScope) } 1000)
@@ -459,11 +488,7 @@ try {
             Select-Row (RowY 0)
             [AdaNative]::Click($nameX, (RowY 3)); Pause 250
             for ($i = 0; $i -lt $rest.Count; $i++) {
-                Type-CellText $rest[$i]
-                if ($i -lt $rest.Count - 1) {
-                    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
-                    Pause 120
-                }
+                Type-NameAndDescription $rest[$i] ($i -lt $rest.Count - 1)
             }
             [System.Windows.Forms.SendKeys]::SendWait('{TAB}'); Pause 200
             Log ("Fast mode: {0} name(s) typed down the column" -f $rest.Count)
