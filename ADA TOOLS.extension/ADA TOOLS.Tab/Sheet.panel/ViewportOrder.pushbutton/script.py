@@ -15,7 +15,7 @@ rotation, detail number, title position and pinned state. The views
 themselves are untouched. The whole change is one undoable
 transaction."""
 __title__ = "Viewport\nDraw Order"
-__version__ = "Version 1.0"
+__version__ = "Version 1.1"
 __author__ = "ADA"
 
 import clr
@@ -23,7 +23,8 @@ import clr
 clr.AddReference('RevitAPI')
 
 from Autodesk.Revit.DB import (
-    BuiltInParameter, Transaction, ViewSheet, Viewport
+    BuiltInParameter, Transaction, ViewSheet, Viewport,
+    IFailuresPreprocessor, FailureProcessingResult, FailureSeverity
 )
 
 from pyrevit import forms, revit, script
@@ -36,6 +37,16 @@ from GUI.ReportTheme import ADAReport
 doc = revit.doc
 
 TITLE = __title__.replace("\n", " ")
+TMP_PREFIX = "ZZ_ADA_TMP_"
+
+
+class SwallowWarnings(IFailuresPreprocessor):
+    """Silently dismiss warnings so they don't interrupt the transaction."""
+    def PreprocessFailures(self, accessor):
+        for failure in accessor.GetFailureMessages():
+            if failure.GetSeverity() == FailureSeverity.Warning:
+                accessor.DeleteWarning(failure)
+        return FailureProcessingResult.Continue
 
 
 def eid_value(eid):
@@ -50,6 +61,11 @@ def view_name(viewport):
     return doc.GetElement(viewport.ViewId).Name
 
 
+def get_detail_number(viewport):
+    param = viewport.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
+    return param.AsString() if param else None
+
+
 class ViewportState(object):
     """Everything needed to re-place a viewport exactly as it was."""
 
@@ -60,9 +76,7 @@ class ViewportState(object):
         self.type_id = viewport.GetTypeId()
         self.rotation = viewport.Rotation
         self.pinned = viewport.Pinned
-        param = viewport.get_Parameter(
-            BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
-        self.detail_number = param.AsString() if param else None
+        self.detail_number = get_detail_number(viewport)
         # title position / line length - Revit 2022+
         self.label_offset = getattr(viewport, "LabelOffset", None)
         self.label_length = getattr(viewport, "LabelLineLength", None)
@@ -82,9 +96,29 @@ class ViewportState(object):
 
 
 def set_detail_number(viewport, number):
+    """Set the detail number only if it differs. Returns True on success."""
     param = viewport.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
-    if param and not param.IsReadOnly and number:
+    if not param or param.IsReadOnly or not number:
+        return False
+    if param.AsString() == number:
+        return True
+    try:
         param.Set(number)
+        return True
+    except Exception:
+        return False
+
+
+def set_detail_number_safe(viewport, number):
+    """Try the original number; if Revit refuses it, use a unique
+    fallback (number-b, number-c, ...). Returns the number applied."""
+    if set_detail_number(viewport, number):
+        return number
+    for suffix in "bcdefghijklmnopqrstuvwxyz":
+        candidate = "{}-{}".format(number, suffix)
+        if set_detail_number(viewport, candidate):
+            return candidate
+    return get_detail_number(viewport)
 
 
 def pick_order(viewports):
@@ -129,27 +163,49 @@ def main():
         report.flush()
         return
 
+    # capture state BEFORE touching anything
     # re-placed lowest first, so the last one re-placed is drawn on top
     states = [ViewportState(vp) for vp in reversed(top_to_bottom)]
+    fallbacks = []
 
     try:
         with Transaction(doc, "ADA - Viewport Draw Order") as t:
+            options = t.GetFailureHandlingOptions()
+            options.SetFailuresPreprocessor(SwallowWarnings())
+            t.SetFailureHandlingOptions(options)
             t.Start()
-            for vp in top_to_bottom:
+
+            # 1. unpin + park the ORIGINAL viewports on temp numbers so
+            #    their real numbers are released before deletion
+            for i, vp in enumerate(top_to_bottom):
                 if vp.Pinned:
                     vp.Pinned = False
+                set_detail_number(vp, "{}OLD_{}".format(TMP_PREFIX, i))
+            doc.Regenerate()
+
+            # 2. delete the originals
+            for vp in top_to_bottom:
                 doc.Delete(vp.Id)
+            doc.Regenerate()
 
+            # 3. re-place, lowest first
             new_viewports = [state.recreate(sheet) for state in states]
+            doc.Regenerate()
 
-            # detail numbers must be unique on the sheet: park them on
-            # temporary values first, then restore the originals
+            # 4. park the new ones on temp values, then restore originals
             for i, vp in enumerate(new_viewports):
-                set_detail_number(vp, "ADA_TMP_{}".format(i))
+                set_detail_number(vp, "{}NEW_{}".format(TMP_PREFIX, i))
+            doc.Regenerate()
+
             for vp, state in zip(new_viewports, states):
-                set_detail_number(vp, state.detail_number)
+                if state.detail_number:
+                    applied = set_detail_number_safe(vp, state.detail_number)
+                    if applied != state.detail_number:
+                        fallbacks.append((state.name, state.detail_number,
+                                          applied))
                 if state.pinned:
                     vp.Pinned = True
+
             t.Commit()
     except Exception as ex:
         report.error("Failed, nothing was changed: {}".format(ex))
@@ -160,6 +216,12 @@ def main():
             for i, state in enumerate(reversed(states), 1)]
     report.subheader("Draw order (1 = on top)")
     report.table(["#", "View", "Detail Number"], rows)
+
+    if fallbacks:
+        report.subheader("Detail numbers that could not be restored")
+        report.table(["View", "Original", "Applied"],
+                     [[n, o, a or ""] for n, o, a in fallbacks])
+
     report.success("Draw order applied - {} viewport(s) re-placed at the same "
                    "position.".format(len(states)))
     report.flush()
