@@ -235,7 +235,7 @@ function Set-CellText([string]$text) {
 
 # ---------------------------------------------------------------------------
 try {
-    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode)" -Encoding UTF8
+    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v3 (owner window + GXWND grid)" -Encoding UTF8
     Log "Revit PID $RevitPid - waiting for the Phasing dialog (max $TimeoutSec s)"
 
     $found = $null
