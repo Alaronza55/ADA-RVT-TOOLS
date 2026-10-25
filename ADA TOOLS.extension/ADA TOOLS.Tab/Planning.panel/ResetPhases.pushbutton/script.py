@@ -124,8 +124,15 @@ def main():
     t.SetFailureHandlingOptions(options)
     t.Start()
     try:
-        # 1. every element -> created in the kept phase, never demolished
-        for el in FilteredElementCollector(doc).WhereElementIsNotElementType():
+        # 1. every element -> created in the kept phase, never demolished.
+        # Ids are collected up front: changing a phase can make Revit delete
+        # or regenerate other elements, which breaks a live collector.
+        element_ids = list(FilteredElementCollector(doc)
+                           .WhereElementIsNotElementType().ToElementIds())
+        for el_id in element_ids:
+            el = doc.GetElement(el_id)
+            if el is None or not el.IsValidObject:
+                continue
             created = set_param(el, BuiltInParameter.PHASE_CREATED, keep.Id)
             demolished = set_param(el, BuiltInParameter.PHASE_DEMOLISHED,
                                    ElementId.InvalidElementId)
@@ -137,7 +144,12 @@ def main():
                 demolished_cleared += 1
 
         # 2. every view / view template -> kept phase
-        for view in FilteredElementCollector(doc).OfClass(View):
+        view_ids = list(FilteredElementCollector(doc)
+                        .OfClass(View).ToElementIds())
+        for view_id in view_ids:
+            view = doc.GetElement(view_id)
+            if view is None or not view.IsValidObject:
+                continue
             result = set_param(view, BuiltInParameter.VIEW_PHASE, keep.Id)
             if result is False:
                 views_failed += 1
