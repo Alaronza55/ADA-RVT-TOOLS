@@ -82,6 +82,8 @@ NAMES_FILE = os.path.join(ADA_DATA_DIR, "phases_to_create.txt")
 LOG_FILE = os.path.join(ADA_DATA_DIR, "phases_automation_log.txt")
 
 MISSING_CANCEL = "Cancel"
+# the helper must understand "name<TAB>description" lines
+HELPER_VERSION = "helper v7"
 
 config = script.get_config()
 
@@ -92,6 +94,13 @@ def run_phasing_automation(mode, names=None):
     if not os.path.isfile(AUTOMATION_PS1):
         forms.alert("Automation helper not found:\n{}".format(AUTOMATION_PS1),
                     title=TITLE, exitscript=True)
+    with io.open(AUTOMATION_PS1, encoding="utf-8-sig") as f:
+        if HELPER_VERSION not in f.read():
+            forms.alert("The automation helper is outdated (needs '{}'):\n{}\n\n"
+                        "Copy the whole 'lib' folder and the Planning panel of "
+                        "ADA TOOLS again - the files belong together."
+                        .format(HELPER_VERSION, AUTOMATION_PS1),
+                        title=TITLE, exitscript=True)
     if not os.path.isdir(ADA_DATA_DIR):
         os.makedirs(ADA_DATA_DIR)
     if names is not None:
