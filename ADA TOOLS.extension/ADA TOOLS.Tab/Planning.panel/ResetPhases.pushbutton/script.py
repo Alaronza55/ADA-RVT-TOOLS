@@ -81,6 +81,24 @@ def set_param(element, bip, value):
         return False
 
 
+def rename_phase(phase, name):
+    """Rename through the phase's Name parameter (Phase.Name cannot be
+    assigned). Returns None on success, or the error text."""
+    param = phase.get_Parameter(BuiltInParameter.PHASE_NAME)
+    if param is None or param.IsReadOnly:
+        return "the phase's Name parameter is not editable"
+    sub = SubTransaction(doc)
+    sub.Start()
+    try:
+        if not param.Set(name):
+            raise Exception("Revit refused the new name")
+        sub.Commit()
+        return None
+    except Exception as ex:
+        sub.RollBack()
+        return str(ex)
+
+
 def room_phase_id(room):
     param = room.get_Parameter(BuiltInParameter.ROOM_PHASE)
     return param.AsElementId() if param is not None else ElementId.InvalidElementId
@@ -170,8 +188,9 @@ def main():
                 not_deleted.append((name, str(ex)))
 
         # 4. rename the kept phase (after the deletes, so the name is free)
+        rename_error = None
         if keep.Name != GENESIS_NAME:
-            keep.Name = GENESIS_NAME
+            rename_error = rename_phase(keep, GENESIS_NAME)
 
         t.Commit()
     except Exception as ex:
@@ -182,7 +201,11 @@ def main():
         return
 
     report.subheader("Phases")
-    rows = [[GENESIS_NAME, "Kept"]]
+    if rename_error:
+        rows = [[keep.Name, "Kept - could not be renamed: {}".format(
+            rename_error)]]
+    else:
+        rows = [[GENESIS_NAME, "Kept"]]
     rows += [[name, "Deleted"] for name in deleted]
     rows += [[name, "Could not be deleted - {}".format(err)]
              for name, err in not_deleted]
@@ -209,12 +232,15 @@ def main():
         report.warn("{} element(s) could not be changed - typically members "
                     "of groups or elements owned by another user."
                     .format(elements_failed))
+    if rename_error:
+        report.warn("The kept phase could not be renamed - rename it to '{}' "
+                    "in Manage > Phases.".format(GENESIS_NAME))
     if not_deleted:
         report.warn("{} phase(s) could not be deleted - see the table."
                     .format(len(not_deleted)))
     else:
         report.success("The project now has a single phase: {}.".format(
-            GENESIS_NAME))
+            keep.Name))
     report.flush()
 
 
