@@ -15,15 +15,16 @@ rotation, detail number, title position and pinned state. The views
 themselves are untouched. The whole change is one undoable
 transaction."""
 __title__ = "Viewport\nDraw Order"
-__version__ = "Version 1.1"
+__version__ = "Version 1.2"
 __author__ = "ADA"
 
 import clr
+import uuid
 
 clr.AddReference('RevitAPI')
 
 from Autodesk.Revit.DB import (
-    BuiltInParameter, Transaction, ViewSheet, Viewport,
+    BuiltInParameter, Transaction, TransactionStatus, ViewSheet, Viewport,
     IFailuresPreprocessor, FailureProcessingResult, FailureSeverity
 )
 
@@ -37,15 +38,32 @@ from GUI.ReportTheme import ADAReport
 doc = revit.doc
 
 TITLE = __title__.replace("\n", " ")
-TMP_PREFIX = "ZZ_ADA_TMP_"
+# unique per run -> temp numbers can never clash with anything existing
+TMP_PREFIX = "ZZ_ADA_{}_".format(uuid.uuid4().hex[:6].upper())
 
 
-class SwallowWarnings(IFailuresPreprocessor):
-    """Silently dismiss warnings so they don't interrupt the transaction."""
+class FailureHandler(IFailuresPreprocessor):
+    """Dismiss warnings; resolve errors when Revit offers a resolution,
+    otherwise roll back silently (no blocking dialog) and keep the text."""
+    def __init__(self):
+        self.errors = []
+
     def PreprocessFailures(self, accessor):
+        rollback = False
+        resolved = False
         for failure in accessor.GetFailureMessages():
             if failure.GetSeverity() == FailureSeverity.Warning:
                 accessor.DeleteWarning(failure)
+            elif failure.HasResolutions():
+                accessor.ResolveFailure(failure)
+                resolved = True
+            else:
+                self.errors.append(failure.GetDescriptionText())
+                rollback = True
+        if rollback:
+            return FailureProcessingResult.ProceedWithRollBack
+        if resolved:
+            return FailureProcessingResult.ProceedWithCommit
         return FailureProcessingResult.Continue
 
 
@@ -64,6 +82,19 @@ def view_name(viewport):
 def get_detail_number(viewport):
     param = viewport.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
     return param.AsString() if param else None
+
+
+def numbers_in_use(sheet, exclude_id=None):
+    """Detail numbers currently used on the sheet (optionally minus one vp)."""
+    skip = eid_value(exclude_id) if exclude_id is not None else None
+    used = set()
+    for vp_id in sheet.GetAllViewports():
+        if skip is not None and eid_value(vp_id) == skip:
+            continue
+        number = get_detail_number(doc.GetElement(vp_id))
+        if number:
+            used.add(number)
+    return used
 
 
 class ViewportState(object):
@@ -95,28 +126,33 @@ class ViewportState(object):
         return viewport
 
 
-def set_detail_number(viewport, number):
-    """Set the detail number only if it differs. Returns True on success."""
+def set_detail_number(viewport, number, sheet):
+    """Set the detail number only if it is free on the sheet.
+    Revit does NOT throw on duplicates (it posts an error at commit),
+    so uniqueness is checked here. Returns True on success."""
     param = viewport.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)
     if not param or param.IsReadOnly or not number:
         return False
     if param.AsString() == number:
         return True
+    if number in numbers_in_use(sheet, viewport.Id):
+        return False
     try:
         param.Set(number)
-        return True
+        doc.Regenerate()
+        return param.AsString() == number
     except Exception:
         return False
 
 
-def set_detail_number_safe(viewport, number):
-    """Try the original number; if Revit refuses it, use a unique
+def set_detail_number_safe(viewport, number, sheet):
+    """Try the original number; if it is taken, use a unique
     fallback (number-b, number-c, ...). Returns the number applied."""
-    if set_detail_number(viewport, number):
+    if set_detail_number(viewport, number, sheet):
         return number
     for suffix in "bcdefghijklmnopqrstuvwxyz":
         candidate = "{}-{}".format(number, suffix)
-        if set_detail_number(viewport, candidate):
+        if set_detail_number(viewport, candidate, sheet):
             return candidate
     return get_detail_number(viewport)
 
@@ -166,21 +202,22 @@ def main():
     # capture state BEFORE touching anything
     # re-placed lowest first, so the last one re-placed is drawn on top
     states = [ViewportState(vp) for vp in reversed(top_to_bottom)]
-    fallbacks = []
+    new_ids = []
+    handler = FailureHandler()
 
     try:
         with Transaction(doc, "ADA - Viewport Draw Order") as t:
             options = t.GetFailureHandlingOptions()
-            options.SetFailuresPreprocessor(SwallowWarnings())
+            options.SetFailuresPreprocessor(handler)
+            options.SetClearAfterRollback(True)   # no dialog on rollback
             t.SetFailureHandlingOptions(options)
             t.Start()
 
-            # 1. unpin + park the ORIGINAL viewports on temp numbers so
-            #    their real numbers are released before deletion
+            # 1. unpin + park the ORIGINAL viewports on temp numbers
             for i, vp in enumerate(top_to_bottom):
                 if vp.Pinned:
                     vp.Pinned = False
-                set_detail_number(vp, "{}OLD_{}".format(TMP_PREFIX, i))
+                set_detail_number(vp, "{}OLD_{}".format(TMP_PREFIX, i), sheet)
             doc.Regenerate()
 
             # 2. delete the originals
@@ -188,32 +225,45 @@ def main():
                 doc.Delete(vp.Id)
             doc.Regenerate()
 
-            # 3. re-place, lowest first
-            new_viewports = [state.recreate(sheet) for state in states]
-            doc.Regenerate()
+            # 3. re-place ONE BY ONE, lowest first. Regenerate + park each
+            #    one on a temp number before creating the next, so Revit's
+            #    auto-numbering never hands out the same number twice.
+            new_viewports = []
+            for i, state in enumerate(states):
+                vp = state.recreate(sheet)
+                doc.Regenerate()
+                set_detail_number(vp, "{}NEW_{}".format(TMP_PREFIX, i), sheet)
+                new_viewports.append(vp)
 
-            # 4. park the new ones on temp values, then restore originals
-            for i, vp in enumerate(new_viewports):
-                set_detail_number(vp, "{}NEW_{}".format(TMP_PREFIX, i))
-            doc.Regenerate()
-
+            # 4. restore the original numbers + pinned state
             for vp, state in zip(new_viewports, states):
                 if state.detail_number:
-                    applied = set_detail_number_safe(vp, state.detail_number)
-                    if applied != state.detail_number:
-                        fallbacks.append((state.name, state.detail_number,
-                                          applied))
+                    set_detail_number_safe(vp, state.detail_number, sheet)
                 if state.pinned:
                     vp.Pinned = True
+            doc.Regenerate()
 
-            t.Commit()
+            new_ids = [vp.Id for vp in new_viewports]
+            status = t.Commit()
+
+        if status != TransactionStatus.Committed:
+            msg = "; ".join(handler.errors) or str(status)
+            report.error("Failed, nothing was changed: {}".format(msg))
+            report.flush()
+            return
     except Exception as ex:
         report.error("Failed, nothing was changed: {}".format(ex))
         report.flush()
         return
 
-    rows = [[str(i), state.name, state.detail_number or ""]
-            for i, state in enumerate(reversed(states), 1)]
+    # read back what Revit actually kept (after any failure resolution)
+    applied = [get_detail_number(doc.GetElement(eid)) for eid in new_ids]
+    fallbacks = [(s.name, s.detail_number, a)
+                 for s, a in zip(states, applied)
+                 if s.detail_number and a != s.detail_number]
+
+    rows = [[str(i), s.name, a or ""]
+            for i, (s, a) in enumerate(reversed(list(zip(states, applied))), 1)]
     report.subheader("Draw order (1 = on top)")
     report.table(["#", "View", "Detail Number"], rows)
 
