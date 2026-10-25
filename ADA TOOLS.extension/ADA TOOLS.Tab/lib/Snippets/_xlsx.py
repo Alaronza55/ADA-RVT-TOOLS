@@ -16,6 +16,10 @@ import re
 import clr
 clr.AddReference('System.IO.Compression')
 clr.AddReference('System.Xml')
+try:
+    clr.AddReference('System.Private.Xml')   # Revit 2025+ (.NET 8): real home of XmlDocument
+except Exception:
+    pass
 
 from System.IO import FileAccess, FileMode, FileShare, FileStream, StreamReader
 from System.IO.Compression import ZipArchive, ZipArchiveMode

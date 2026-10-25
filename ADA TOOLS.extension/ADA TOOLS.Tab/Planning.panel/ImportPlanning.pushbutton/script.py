@@ -34,6 +34,10 @@ import clr
 clr.AddReference('RevitAPI')
 clr.AddReference('RevitAPIUI')
 clr.AddReference('System.Windows.Forms')
+try:
+    clr.AddReference('System.Diagnostics.Process')   # Revit 2025+ (.NET 8)
+except Exception:
+    clr.AddReference('System')                       # Revit <= 2024 (.NET Framework)
 
 from Autodesk.Revit.UI import PostableCommand, RevitCommandId
 from System.Diagnostics import Process, ProcessStartInfo, ProcessWindowStyle
