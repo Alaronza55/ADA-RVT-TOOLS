@@ -18,7 +18,8 @@ param(
     [string]$Mode = 'create',
     [int]$TimeoutSec = 60,
     [switch]$Quiet,
-    [switch]$IgnoreGridControl   # test switch: behave as if the grid were not exposed
+    [switch]$IgnoreGridControl,  # test switch: behave as if the grid were not exposed
+    [double]$Slow = 1.0          # multiplies every pause (raise it on a slow machine)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,6 +37,11 @@ public static class AdaNative {
         SetCursorPos(x, y);
         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
+    public static void DoubleClick(int x, int y) {
+        Click(x, y);
+        System.Threading.Thread.Sleep(60);
+        Click(x, y);
     }
 }
 "@
@@ -207,6 +213,47 @@ function Find-SelectedBand($r) {
     return @([int]($r.Y + $band[0]), [int]($r.Y + $band[1]))
 }
 
+function Pause([int]$ms) {
+    Start-Sleep -Milliseconds ([int]($ms * $Slow))
+}
+
+function Get-RegionHash([int]$x, [int]$y, [int]$w, [int]$h) {
+    # cheap fingerprint of a screen area, to detect that it changed
+    if ($w -lt 2 -or $h -lt 2) { return '' }
+    $bmp = New-Object System.Drawing.Bitmap $w, $h
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size)
+    $g.Dispose()
+    $sb = New-Object System.Text.StringBuilder
+    for ($yy = 0; $yy -lt $h; $yy += 2) {
+        for ($xx = 0; $xx -lt $w; $xx += 3) {
+            [void]$sb.Append($bmp.GetPixel($xx, $yy).ToArgb())
+        }
+    }
+    $bmp.Dispose()
+    return $sb.ToString().GetHashCode()
+}
+
+function Wait-Until([scriptblock]$condition, [int]$timeoutMs) {
+    # poll every 100 ms; $true as soon as the condition holds
+    $deadline = (Get-Date).AddMilliseconds($timeoutMs * $Slow)
+    do {
+        if (& $condition) { return $true }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
+function Find-EditBox($scope) {
+    # in-place editor the grid opens while a cell is being edited
+    foreach ($el in $scope.FindAll($Tree::Descendants, $True_)) {
+        $c = $el.Current
+        if (($c.ControlType -eq $CT::Edit -or $c.ClassName -match 'edit') -and
+            -not $c.IsOffscreen -and $c.BoundingRectangle.Width -gt 0) { return $el }
+    }
+    return $null
+}
+
 function Escape-SendKeys([string]$text) {
     $out = ''
     foreach ($ch in $text.ToCharArray()) {
@@ -232,7 +279,7 @@ function Type-CellText([string]$text) {
 
 # ---------------------------------------------------------------------------
 try {
-    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v4 (anchor row, reverse insert)" -Encoding UTF8
+    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v5 (watchdogs, slow x$Slow)" -Encoding UTF8
     Log "Revit PID $RevitPid - waiting for the Phasing dialog (max $TimeoutSec s)"
 
     $found = $null
@@ -296,31 +343,94 @@ try {
     Log ("Anchor row: y={0} (band {1}-{2}), row height {3}, new row y={4}, header x={5}, name x={6}" -f
          $anchorY, $band[0], $band[1], $rowH, $newRowY, $headerX, $nameX)
 
-    $created = 0
+    # screen areas used by the watchdogs
+    $editScope = if ($grid) { $grid } else { $dialog }
+    $belowX = [int]($gridRect.X + $gridRect.Width * 0.05)
+    $belowW = [int]($gridRect.Width * 0.9)
+    $belowY = [int]($anchorY + $rowH / 2)
+    $belowH = [int]([Math]::Min($rowH * 4, $gridRect.Y + $gridRect.Height - $belowY - 2))
+    $cellX = [int]($gridRect.X + $gridRect.Width * 0.06)
+    $cellW = [int]($gridRect.Width * 0.22)
+    $cellY = [int]($newRowY - $rowH / 2 + 3)
+    $cellH = [int]($rowH - 6)
+
+    $created = 0; $failed = @()
     $ordered = @($names); [array]::Reverse($ordered)
     foreach ($name in $ordered) {
+        $index = $created + $failed.Count + 1
+
+        # 1. select the anchor row (also commits any pending edit)
         [void][AdaNative]::SetForegroundWindow($hwnd)
-        # select the anchor row (also commits the previous name being edited)
         [AdaNative]::Click($headerX, $anchorY)
-        Start-Sleep -Milliseconds 200
+        Pause 300
 
+        # 2. insert after the anchor - WATCHDOG: wait until the rows below change
+        $before = Get-RegionHash $belowX $belowY $belowW $belowH
         $how = Press $found.InsertAfter
-        Start-Sleep -Milliseconds 400
+        $inserted = Wait-Until { (Get-RegionHash $belowX $belowY $belowW $belowH) -ne $before } 4000
+        if (-not $inserted) {
+            Log ("[{0}] STOP - no new row appeared after pressing After ('{1}')" -f $index, $name)
+            $failed += $name
+            Popup ("The Phasing dialog stopped responding to 'After' (phase {0} of {1}).`nThe automation stopped - check the list, then click OK or Cancel.`n`nLog: {2}" -f $index, $ordered.Count, $LogFile) 48
+            exit 1
+        }
+        Pause 300
 
-        # make the new row's Name cell current, then type the name
-        [void][AdaNative]::SetForegroundWindow($hwnd)
-        [AdaNative]::Click($nameX, $newRowY)
-        Start-Sleep -Milliseconds 250
-        Type-CellText $name
-        $created++
-        Log ("[{0}] inserted ({1}) and typed '{2}'" -f $created, $how, $name)
+        # 3-5. rename the new row - WATCHDOG: compare the Name cell before and
+        #      after, both captured with the ANCHOR row selected (so only a
+        #      real text change counts, not the selection highlight moving);
+        #      retry with another edit method and longer pauses if unchanged
+        $named = $false
+        for ($attempt = 1; $attempt -le 3 -and -not $named; $attempt++) {
+            $wait = 1.0 * $attempt
+            [void][AdaNative]::SetForegroundWindow($hwnd)
+            [AdaNative]::Click($headerX, $anchorY)
+            Pause ([int](300 * $wait))
+            $cellBefore = Get-RegionHash $cellX $cellY $cellW $cellH
+
+            # enter the Name cell - a different method on each attempt
+            $editor = $null
+            switch ($attempt) {
+                1 { $method = 'click+type'
+                    [AdaNative]::Click($nameX, $newRowY) }
+                2 { $method = 'double-click+type'
+                    [AdaNative]::Click($nameX, $newRowY)
+                    Pause 400
+                    [AdaNative]::DoubleClick($nameX, $newRowY) }
+                3 { $method = 'click+F2+type'
+                    [AdaNative]::Click($nameX, $newRowY)
+                    Pause 400
+                    [System.Windows.Forms.SendKeys]::SendWait('{F2}') }
+            }
+            Pause ([int](400 * $wait))
+            $editor = Find-EditBox $editScope
+
+            # type: when an editor is already open, select its text first so
+            # the name replaces it; otherwise the first keystroke opens the
+            # editor and replaces the cell content
+            if ($editor) { [System.Windows.Forms.SendKeys]::SendWait('{HOME}+{END}') }
+            Type-CellText $name
+            Pause ([int](300 * $wait))
+
+            # commit: Tab (stays on the same row), then select the anchor row
+            [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+            Pause ([int](300 * $wait))
+            [AdaNative]::Click($headerX, $anchorY)
+            [void](Wait-Until { $null -eq (Find-EditBox $editScope) } (1500 * $wait))
+            Pause ([int](400 * $wait))
+
+            $named = (Get-RegionHash $cellX $cellY $cellW $cellH) -ne $cellBefore
+            Log ("[{0}] attempt {1} ({2}, editor seen={3}): {4} '{5}'" -f
+                 $index, $attempt, $method, [bool]$editor,
+                 $(if ($named) { 'OK' } else { 'NOT CHANGED' }), $name)
+        }
+        if ($named) { $created++ } else { $failed += $name }
     }
-    # commit the last name
-    [AdaNative]::Click($headerX, $anchorY)
-    Start-Sleep -Milliseconds 200
 
-    Log ("Done: {0} phase(s) inserted and named" -f $created)
+    Log ("Done: {0} named, {1} not named" -f $created, $failed.Count)
+    if ($failed.Count) { Log ("Not named (left as 'Phase N'): " + ($failed -join ' | ')) }
     $msg = "{0} phase(s) inserted and named in the Phasing dialog.`n" -f $created
+    if ($failed.Count) { $msg += "{0} could not be named (still 'Phase N', see log).`n" -f $failed.Count }
     $msg += "`nCHECK the list, then click OK to keep the phases (Cancel discards everything).`nThen run Import Planning again to fill 'Contractor'.`n`nLog: $LogFile"
     Popup $msg
 }
