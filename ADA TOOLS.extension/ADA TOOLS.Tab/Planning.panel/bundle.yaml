@@ -1,0 +1,4 @@
+layout:
+  - ImportPlanning
+  - ResetPhases
+  - DeletePhaseFilters

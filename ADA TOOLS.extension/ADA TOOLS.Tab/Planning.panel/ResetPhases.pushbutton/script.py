@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-__doc__ = """Reset the project's phasing to a single phase, "PHASE0 - Genesis".
+__doc__ = """Reset the project's phasing to a single phase.
 
 A Revit project always needs at least one phase (and the API cannot
-create new ones), so the tool KEEPS one phase - the one already named
-"PHASE0 - Genesis" if there is one, otherwise the earliest phase -
-and:
+create new ones), so the tool KEEPS the earliest phase (usually
+"Existing") and:
 
   1. sets every element of the model to Phase Created = that phase
      and Phase Demolished = None,
   2. sets every view (and view template) to that phase,
-  3. deletes all the other phases,
-  4. renames the kept phase to "PHASE0 - Genesis".
+  3. deletes all the other phases.
 
 You get a confirmation window first. Elements that cannot be changed
 (e.g. inside a group, or owned by someone else in a workshared model)
@@ -42,7 +40,6 @@ from GUI.ReportTheme import ADAReport
 doc = revit.doc
 
 TITLE = __title__.replace("\n", " ")
-GENESIS_NAME = "PHASE0 - Genesis"
 
 CONFIRM = "Reset all phases"
 CANCEL = "Cancel"
@@ -81,24 +78,6 @@ def set_param(element, bip, value):
         return False
 
 
-def rename_phase(phase, name):
-    """Rename through the phase's Name parameter (Phase.Name cannot be
-    assigned). Returns None on success, or the error text."""
-    param = phase.get_Parameter(BuiltInParameter.PHASE_NAME)
-    if param is None or param.IsReadOnly:
-        return "the phase's Name parameter is not editable"
-    sub = SubTransaction(doc)
-    sub.Start()
-    try:
-        if not param.Set(name):
-            raise Exception("Revit refused the new name")
-        sub.Commit()
-        return None
-    except Exception as ex:
-        sub.RollBack()
-        return str(ex)
-
-
 def room_phase_id(room):
     param = room.get_Parameter(BuiltInParameter.ROOM_PHASE)
     return param.AsElementId() if param is not None else ElementId.InvalidElementId
@@ -109,7 +88,7 @@ def main():
     if not phases:
         forms.alert("This model has no phases.", title=TITLE, exitscript=True)
 
-    keep = next((p for p in phases if p.Name == GENESIS_NAME), phases[0])
+    keep = phases[0]
     to_delete = [p for p in phases if p.Id != keep.Id]
 
     spatial = list(FilteredElementCollector(doc).OfClass(SpatialElement))
@@ -117,8 +96,8 @@ def main():
                        if room_phase_id(s) not in (keep.Id,
                                                    ElementId.InvalidElementId)]
 
-    label = ("Keep '{}' as '{}', delete {} other phase(s) and set ALL elements "
-             "and views to it.".format(keep.Name, GENESIS_NAME, len(to_delete)))
+    label = ("Keep '{}', delete {} other phase(s) and set ALL elements "
+             "and views to it.".format(keep.Name, len(to_delete)))
     if spatial_at_risk:
         label += ("\n{} Room(s)/Space(s)/Area(s) are in other phases and may "
                   "be deleted.".format(len(spatial_at_risk)))
@@ -128,8 +107,7 @@ def main():
         script.exit()
 
     report = ADAReport(TITLE)
-    report.line("Kept phase: <b>{}</b> &rarr; renamed <b>{}</b>".format(
-        keep.Name, GENESIS_NAME))
+    report.line("Kept phase: <b>{}</b>".format(keep.Name))
 
     elements_changed = elements_failed = 0
     views_changed = views_failed = 0
@@ -187,11 +165,6 @@ def main():
                 sub.RollBack()
                 not_deleted.append((name, str(ex)))
 
-        # 4. rename the kept phase (after the deletes, so the name is free)
-        rename_error = None
-        if keep.Name != GENESIS_NAME:
-            rename_error = rename_phase(keep, GENESIS_NAME)
-
         t.Commit()
     except Exception as ex:
         if t.HasStarted() and not t.HasEnded():
@@ -201,11 +174,7 @@ def main():
         return
 
     report.subheader("Phases")
-    if rename_error:
-        rows = [[keep.Name, "Kept - could not be renamed: {}".format(
-            rename_error)]]
-    else:
-        rows = [[GENESIS_NAME, "Kept"]]
+    rows = [[keep.Name, "Kept"]]
     rows += [[name, "Deleted"] for name in deleted]
     rows += [[name, "Could not be deleted - {}".format(err)]
              for name, err in not_deleted]
@@ -232,9 +201,6 @@ def main():
         report.warn("{} element(s) could not be changed - typically members "
                     "of groups or elements owned by another user."
                     .format(elements_failed))
-    if rename_error:
-        report.warn("The kept phase could not be renamed - rename it to '{}' "
-                    "in Manage > Phases.".format(GENESIS_NAME))
     if not_deleted:
         report.warn("{} phase(s) could not be deleted - see the table."
                     .format(len(not_deleted)))
