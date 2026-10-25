@@ -171,20 +171,9 @@ function Get-FallbackGridRect($dialog, $afterButton) {
     return New-Object System.Windows.Rect($left, $top, ($right - $left), ($bottom - $top))
 }
 
-function Get-NameCells($grid) {
-    # cells exposing an editable value (if Revit's grid exposes them at all)
-    $result = @()
-    foreach ($el in $grid.FindAll($Tree::Descendants, $True_)) {
-        $vp = $null
-        if ($el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$vp)) {
-            $result += ,@($el, $vp.Current.Value)
-        }
-    }
-    return $result
-}
-
-function Find-SelectedRowY($r) {
-    # screen-capture the grid area and find the highlighted (selected) row band
+function Find-SelectedBand($r) {
+    # screen-capture the grid area and return the FIRST highlighted (selected)
+    # row band as @(topY, bottomY) in screen coordinates, or $null
     $w = [int]$r.Width; $h = [int]$r.Height
     if ($w -lt 20 -or $h -lt 20) { return $null }
     $bmp = New-Object System.Drawing.Bitmap $w, $h
@@ -207,35 +196,43 @@ function Find-SelectedRowY($r) {
     }
     $bmp.Dispose()
     if ($rowsHit.Count -lt 6) { return $null }
-    # keep the LAST contiguous band (newly inserted row is the selected one)
     $bands = @(); $start = $rowsHit[0]; $prev = $rowsHit[0]
     foreach ($y in $rowsHit[1..($rowsHit.Count - 1)]) {
         if ($y -ne $prev + 1) { $bands += ,@($start, $prev); $start = $y }
         $prev = $y
     }
     $bands += ,@($start, $prev)
-    $band = $bands | Where-Object { ($_[1] - $_[0]) -ge 6 } | Select-Object -Last 1
+    $band = $bands | Where-Object { ($_[1] - $_[0]) -ge 6 } | Select-Object -First 1
     if (-not $band) { return $null }
-    return [int]($r.Y + ($band[0] + $band[1]) / 2)
+    return @([int]($r.Y + $band[0]), [int]($r.Y + $band[1]))
 }
 
-function Set-CellText([string]$text) {
-    # paste into the cell being edited, then commit with Tab: it stays on the
-    # same row (Enter would move to the next row - so the next "Insert After"
-    # would land in the wrong place, and phase order can't be changed
-    # afterwards in Revit - or could trigger the dialog's OK button)
-    [System.Windows.Forms.Clipboard]::SetText($text)
-    Start-Sleep -Milliseconds 80
-    [System.Windows.Forms.SendKeys]::SendWait('^a')
-    [System.Windows.Forms.SendKeys]::SendWait('^v')
+function Escape-SendKeys([string]$text) {
+    $out = ''
+    foreach ($ch in $text.ToCharArray()) {
+        if ('+^%~(){}[]'.IndexOf($ch) -ge 0) { $out += '{' + $ch + '}' } else { $out += $ch }
+    }
+    return $out
+}
+
+function Type-CellText([string]$text) {
+    # The Name cell is current (not in edit mode): typing the first character
+    # starts editing and REPLACES the cell content; the rest is pasted into
+    # the edit box. (No Ctrl+A: outside edit mode it would select every cell
+    # of the grid and Ctrl+V would paste into all of them.)
+    [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys $text.Substring(0, 1)))
     Start-Sleep -Milliseconds 120
-    [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
-    Start-Sleep -Milliseconds 150
+    if ($text.Length -gt 1) {
+        [System.Windows.Forms.Clipboard]::SetText($text.Substring(1))
+        Start-Sleep -Milliseconds 60
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
+        Start-Sleep -Milliseconds 120
+    }
 }
 
 # ---------------------------------------------------------------------------
 try {
-    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v3 (owner window + GXWND grid)" -Encoding UTF8
+    Add-Content -LiteralPath $LogFile -Value "ADA Tools - Phasing dialog automation ($Mode) - helper v4 (anchor row, reverse insert)" -Encoding UTF8
     Log "Revit PID $RevitPid - waiting for the Phasing dialog (max $TimeoutSec s)"
 
     $found = $null
@@ -277,59 +274,53 @@ try {
     }
 
     Log ('Insert After: ' + (Describe $found.InsertAfter))
-    $created = 0; $failed = @()
 
-    foreach ($name in $names) {
+    # The selected row when the dialog opens (normally "Existing") is the
+    # ANCHOR. Every phase is inserted right after it, so the new row is always
+    # the row just below the anchor - a known, visible position, whatever the
+    # grid's selection / scrolling does afterwards. Names are therefore
+    # inserted in REVERSE order to end up in planning order.
+    [void][AdaNative]::SetForegroundWindow($hwnd)
+    Start-Sleep -Milliseconds 300
+    $band = Find-SelectedBand $gridRect
+    if (-not $band) {
+        Log 'No selected row found in the grid - nothing was done.'
+        Popup "Could not find the selected phase in the Phasing dialog.`nNothing was changed - select 'Existing' in the list and run Import Planning again.`n`nLog: $LogFile" 48
+        exit 1
+    }
+    $anchorY = [int](($band[0] + $band[1]) / 2)
+    $rowH = ($band[1] - $band[0]) + 2
+    $newRowY = $anchorY + $rowH
+    $headerX = [int]($gridRect.X + $gridRect.Width * 0.025)   # row-number column
+    $nameX = [int]($gridRect.X + $gridRect.Width * 0.17)      # Name column (~5-30 %)
+    Log ("Anchor row: y={0} (band {1}-{2}), row height {3}, new row y={4}, header x={5}, name x={6}" -f
+         $anchorY, $band[0], $band[1], $rowH, $newRowY, $headerX, $nameX)
+
+    $created = 0
+    $ordered = @($names); [array]::Reverse($ordered)
+    foreach ($name in $ordered) {
         [void][AdaNative]::SetForegroundWindow($hwnd)
-        $before = @()
-        if ($grid) { $before = @(Get-NameCells $grid | ForEach-Object { $_[1] }) }
+        # select the anchor row (also commits the previous name being edited)
+        [AdaNative]::Click($headerX, $anchorY)
+        Start-Sleep -Milliseconds 200
 
         $how = Press $found.InsertAfter
-        Log ("Insert After pressed ({0})" -f $how)
         Start-Sleep -Milliseconds 400
 
-        $done = $false
-        # strategy 1: the grid exposes editable cells -> set the new row's name
-        if ($grid) {
-            foreach ($cell in (Get-NameCells $grid)) {
-                if ($before -notcontains $cell[1] -and $cell[1] -ne '') {
-                    try {
-                        $vp = $cell[0].GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-                        $vp.SetValue($name)
-                        $done = $true
-                        Log ("[UIA] '{0}' -> '{1}'" -f $cell[1], $name)
-                    } catch { Log ("[UIA] SetValue failed: " + $_.Exception.Message) }
-                    break
-                }
-            }
-        }
-        # strategy 2: click the Name cell of the highlighted (new) row and paste
-        if (-not $done) {
-            $r = $gridRect
-            $y = Find-SelectedRowY $r
-            if ($y) {
-                # Revit's Name column covers ~5-30 % of the grid width
-                $x = [int]($r.X + $r.Width * 0.17)
-                [void][AdaNative]::SetForegroundWindow($hwnd)
-                [AdaNative]::Click($x, $y)
-                Start-Sleep -Milliseconds 250
-                [AdaNative]::Click($x, $y)
-                Start-Sleep -Milliseconds 250
-                Set-CellText $name
-                Start-Sleep -Milliseconds 200
-                $done = $true
-                Log ("[CLICK] row at y={0}, x={1} -> '{2}'" -f $y, $x, $name)
-            } else {
-                Log "[CLICK] selected row not found for '$name'"
-            }
-        }
-
-        if ($done) { $created++ } else { $failed += $name }
+        # make the new row's Name cell current, then type the name
+        [void][AdaNative]::SetForegroundWindow($hwnd)
+        [AdaNative]::Click($nameX, $newRowY)
+        Start-Sleep -Milliseconds 250
+        Type-CellText $name
+        $created++
+        Log ("[{0}] inserted ({1}) and typed '{2}'" -f $created, $how, $name)
     }
+    # commit the last name
+    [AdaNative]::Click($headerX, $anchorY)
+    Start-Sleep -Milliseconds 200
 
-    Log ("Done: {0} named, {1} failed" -f $created, $failed.Count)
+    Log ("Done: {0} phase(s) inserted and named" -f $created)
     $msg = "{0} phase(s) inserted and named in the Phasing dialog.`n" -f $created
-    if ($failed.Count) { $msg += "{0} could not be named (see log).`n" -f $failed.Count }
     $msg += "`nCHECK the list, then click OK to keep the phases (Cancel discards everything).`nThen run Import Planning again to fill 'Contractor'.`n`nLog: $LogFile"
     Popup $msg
 }
