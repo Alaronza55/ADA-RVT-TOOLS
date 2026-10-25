@@ -14,6 +14,11 @@ mouse / keyboard until the ADA message appears, then check the list
 and click OK (Cancel discards everything). The last file, sheet and
 range are remembered.
 
+NUMBERING: phases are named "PHASE 0 - <Excel text>", "PHASE 1 - ...",
+... in the order of the planning (as confirmed in the list). Matching
+with existing phases ignores the "PHASE n - " part, so reordering or
+older un-numbered phases do not create duplicates.
+
 PERIOD -> PHASE DESCRIPTION: for each phase row, the coloured (or
 filled) cells of its Gantt bar are found to the right of the names;
 for each one the tool goes UP its column to the first date (the date
@@ -62,8 +67,8 @@ from pyrevit import forms, revit, script
 from GUI.forms import select_from_buttons, ask_for_inputs, order_list
 from GUI.ReportTheme import ADAReport
 from Snippets._planning import (ADA_DATA_DIR, format_period, gantt_periods,
-                                name_key, phase_rows, pick_sheet,
-                                pick_workbook)
+                                name_key, numbered_phase_name, phase_rows,
+                                pick_sheet, pick_workbook)
 
 doc = revit.doc
 uiapp = __revit__
@@ -214,8 +219,8 @@ def main():
         title=TITLE,
         label="Phases read from Excel - check / reorder:",
         button_name="Next",
-        top_text="FIRST PHASE",
-        bottom_text="LAST PHASE",
+        top_text="FIRST PHASE  (PHASE 0)",
+        bottom_text="LAST PHASE  (numbered in this order)",
         version=__version__)
     if not ordered:
         script.exit()
@@ -226,7 +231,12 @@ def main():
     config.last_phase_range = phase_ref
     script.save_config()
 
+    # Revit phase names: "PHASE 0 - ...", "PHASE 1 - ..." in planning order
+    numbered = {name: numbered_phase_name(i, name)
+                for i, name in enumerate(planning)}
     missing = [name for name in planning if not match(name)]
+    renumber = [(match(n).Name, numbered[n]) for n in planning
+                if match(n) and match(n).Name != numbered[n]]
 
     report = ADAReport(TITLE)
     report.line(u"Excel: <b>{}</b> &nbsp;|&nbsp; sheet <b>{}</b> &nbsp;|&nbsp; "
@@ -260,9 +270,15 @@ def main():
     no_period = [n for n in planning if not description[n]]
     report.subheader("Phases")
     report.table(["Phase", "Period (description)", "Status"],
-                 [[name, description[name] or "-",
+                 [[match(name).Name if match(name) else numbered[name],
+                   description[name] or "-",
                    "In project" if match(name) else "MISSING"]
                   for name in planning])
+    if renumber:
+        report.warn(u"{} existing phase(s) do not have their planning number "
+                    u"(e.g. '{}' should be '{}') - Revit cannot rename phases "
+                    u"from a script: rename them in Manage > Phases if needed."
+                    .format(len(renumber), renumber[0][0], renumber[0][1]))
     if len(no_period) == len(planning):
         report.warn("No period found: no coloured / filled cell with a date "
                     "above it (going up the column) on the phase rows.")
@@ -279,7 +295,7 @@ def main():
     report.warn("{} phase(s) are missing.".format(len(missing)))
     report.flush()
 
-    Clipboard.SetText(u"\r\n".join(missing))
+    Clipboard.SetText(u"\r\n".join(numbered[n] for n in missing))
     create_label = "Create {} phases automatically".format(len(missing))
     choice = select_from_buttons(
         [create_label, MISSING_CANCEL],
@@ -291,7 +307,8 @@ def main():
         version=__version__)
     if choice == create_label:
         # one line per phase: name<TAB>description (typed in the dialog)
-        run_phasing_automation("create", [u"{}\t{}".format(n, description[n])
+        run_phasing_automation("create", [u"{}\t{}".format(numbered[n],
+                                                           description[n])
                                           for n in missing])
 
 

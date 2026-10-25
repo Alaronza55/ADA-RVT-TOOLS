@@ -4,6 +4,7 @@ Planning): phase-name cleaning, Excel file / sheet picking and the
 creation of text shared parameters in the Phasing group."""
 
 import os
+import re
 
 from Autodesk.Revit.DB import CategoryType, ExternalDefinitionCreationOptions
 
@@ -31,9 +32,24 @@ def clean_name(text):
     return u" ".join(name.split())
 
 
+_PHASE_NUMBER = re.compile(u"^\\s*phase\\s*\\d+\\s*-\\s*", re.IGNORECASE)
+
+
+def numbered_phase_name(number, name):
+    """'PHASE 3 - Concrete (same location)'"""
+    return u"PHASE {} - {}".format(number, name)
+
+
+def strip_phase_number(name):
+    """'PHASE 3 - Concrete' -> 'Concrete' (unchanged if not numbered)."""
+    return _PHASE_NUMBER.sub(u"", name or u"", count=1)
+
+
 def name_key(name):
-    """Case / spacing insensitive key to match a planning row to a phase."""
-    return u" ".join((name or u"").split()).lower()
+    """Key to match a planning row to a phase: case / spacing insensitive,
+    and the 'PHASE n - ' numbering is ignored (so reordering the planning
+    or renumbering does not break the match)."""
+    return u" ".join(strip_phase_number(name).split()).lower()
 
 
 def eid_value(eid):
