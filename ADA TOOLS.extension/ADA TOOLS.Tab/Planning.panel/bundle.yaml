@@ -2,5 +2,6 @@ layout:
   - ImportPlanning
   - FillFromPlanning
   - PhaseViews4D
+  - CheckLinkPhases
   - ResetPhases
   - DeletePhaseFilters
