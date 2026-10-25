@@ -1,4 +1,5 @@
 layout:
   - ImportPlanning
+  - FillFromPlanning
   - ResetPhases
   - DeletePhaseFilters
