@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 __doc__ = """Delete every visualization marker left behind by the QTO
 measurement tools (Get Surface, Get Volume, Get Length, Get Length
-(Curve), Distance 2 Curves) - the duplicate face/volume shells, dimension arrows, and 3D
+(Curve), Distance 2 Curves, Formwork Surface) - the duplicate face/volume shells, dimension arrows, and 3D
 digit readouts they draw in the model to show what was measured.
 
 These markers are real DirectShape elements created in the active
@@ -35,6 +35,7 @@ MARKER_NAMES = {
     "ADA_QTO_CurveLengthText",         # Get Length (Curve) - 3D length digits
     "ADA_QTO_DistanceArrowMarker",     # Distance 2 Curves - blue arrow
     "ADA_QTO_DistanceText",            # Distance 2 Curves - 3D distance digits
+    "ADA_QTO_FormworkMarker",          # Formwork Surface - teal formwork faces
 }
 
 try:
