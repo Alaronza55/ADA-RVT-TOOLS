@@ -34,6 +34,11 @@ they are merged into a single combined arrow spanning the group, with
 one label showing the SUM of their lengths, instead of one arrow per
 fragment.
 
+Dimension side: after picking, choose where the dimensions go, as seen
+on screen - up or down for curves running horizontally, left or right
+for curves running vertically. Each question is only asked if such
+curves were picked, and the answer applies to all of them.
+
 Results are printed per curve and as a running total, in meters
 and millimeters."""
 __title__ = "Get Length\n(Curve)"
@@ -59,6 +64,8 @@ output = script.get_output()
 
 MARKER_NAME = "ADA_QTO_CurveLengthArrowMarker"
 TEXT_MARKER_NAME = "ADA_QTO_CurveLengthText"
+
+UP, DOWN, LEFT, RIGHT = "Up", "Down", "Left", "Right"
 
 ARROWHEAD_LENGTH = 0.35        # feet
 ARROWHEAD_RADIUS = 0.13        # feet
@@ -235,7 +242,24 @@ def build_cylinder_faces(p0, p1, radius, sides):
     return loops
 
 
-def offset_arrow_points(p0, p1, view):
+def view_axes(view):
+    """(toward_camera, right, up) unit vectors of the view."""
+    try:
+        return (view.ViewDirection.Normalize(), view.RightDirection.Normalize(),
+                view.UpDirection.Normalize())
+    except Exception:
+        return DB.XYZ(0, 0, 1), DB.XYZ(1, 0, 0), DB.XYZ(0, 1, 0)
+
+
+def runs_vertically(p0, p1, view):
+    """True if the segment looks mostly vertical on screen (closer to the
+    view's up than to its right)."""
+    _, right, up = view_axes(view)
+    direction = p1.Subtract(p0)
+    return abs(direction.DotProduct(up)) >= abs(direction.DotProduct(right))
+
+
+def offset_arrow_points(p0, p1, view, sides):
     """Push the measured segment toward the viewer AND sideways within
     the view plane, so the drawn arrow visibly separates from the
     curve on screen instead of appearing to sit right on top of it -
@@ -245,10 +269,9 @@ def offset_arrow_points(p0, p1, view):
     projection is exactly "drop the ViewDirection component", so a
     pure ViewDirection shift produces NO on-screen displacement at
     all - the arrow would land exactly on top of the measured curve.
-    The in-plane component follows the same convention as a hand-drawn
-    dimension: a mostly-vertical segment (parallel to the view's up)
-    gets offset sideways, to the right; a mostly-horizontal segment
-    gets offset straight down, below it. Shifting both endpoints by
+    The in-plane component is the side the user chose: `sides` is
+    {"vertical": LEFT or RIGHT, "horizontal": UP or DOWN}, applied
+    according to how the segment runs on screen. Shifting both endpoints by
     the same vector doesn't change the segment's direction/length, so
     this doesn't need to be perpendicular to it. The offset scales
     with the segment's length (clamped between ARROW_OFFSET_MIN and
@@ -261,17 +284,12 @@ def offset_arrow_points(p0, p1, view):
         return None, None, None, None
     direction = axis.Normalize()
 
-    try:
-        toward_camera = view.ViewDirection.Normalize()
-        right = view.RightDirection.Normalize()
-        up = view.UpDirection.Normalize()
-    except Exception:
-        toward_camera, right, up = DB.XYZ(0, 0, 1), DB.XYZ(1, 0, 0), DB.XYZ(0, 1, 0)
+    toward_camera, right, up = view_axes(view)
 
-    if abs(direction.DotProduct(up)) >= abs(direction.DotProduct(right)):
-        in_plane = right
+    if runs_vertically(p0, p1, view):
+        in_plane = right if sides["vertical"] == RIGHT else right.Negate()
     else:
-        in_plane = up.Negate()
+        in_plane = up if sides["horizontal"] == UP else up.Negate()
     offset_dir = toward_camera.Add(in_plane).Normalize()
 
     offset = max(ARROW_OFFSET_MIN, min(ARROW_OFFSET_MAX, dist * ARROW_OFFSET_FRACTION))
@@ -310,11 +328,11 @@ def build_arrow_faces(p0, p1, p0_true, p1_true):
     return faces
 
 
-def create_arrow_marker(p0, p1, view):
+def create_arrow_marker(p0, p1, view, sides):
     """p0/p1 are the true measured endpoints (host coords); the drawn
     arrow is offset off them (toward the viewer and sideways within
     the view plane) via offset_arrow_points."""
-    p0_draw, p1_draw, direction, _ = offset_arrow_points(p0, p1, view)
+    p0_draw, p1_draw, direction, _ = offset_arrow_points(p0, p1, view, sides)
     if direction is None:
         return None
 
@@ -527,6 +545,26 @@ def group_collinear_markers(markers):
     return merged
 
 
+def ask_dimension_sides(grouped_markers, view):
+    """Ask on which side to draw the dimensions - only the questions that
+    apply to the picked curves: up / down for those running horizontally
+    on screen, left / right for those running vertically."""
+    vertical = [runs_vertically(g[0], g[1], view) for g in grouped_markers]
+    sides = {"horizontal": DOWN, "vertical": RIGHT}
+    questions = []
+    if not all(vertical):
+        questions.append(("horizontal", [UP, DOWN], "Horizontal curves: dimension side"))
+    if any(vertical):
+        questions.append(("vertical", [LEFT, RIGHT], "Vertical curves: dimension side"))
+    for key, options, label in questions:
+        choice = select_from_buttons(options, title=__title__, label=label,
+                                     version=__version__)
+        if not choice:
+            forms.alert("Cancelled.", exitscript=True)
+        sides[key] = choice
+    return sides
+
+
 try:
     report = ADAReport()
 
@@ -656,6 +694,7 @@ try:
     if grouped_markers:
         drawn = 0
         text_failed = 0
+        sides = ask_dimension_sides(grouped_markers, doc.ActiveView)
         try:
             with revit.Transaction("QTO Curve Length Marker"):
                 view = doc.ActiveView
@@ -665,11 +704,11 @@ try:
                     facing_normal = DB.XYZ(0, 0, 1)
 
                 for p0, p1, length_m, _count in grouped_markers:
-                    marker = create_arrow_marker(p0, p1, view)
+                    marker = create_arrow_marker(p0, p1, view, sides)
                     if marker is not None:
                         drawn += 1
                     try:
-                        p0_draw, p1_draw, direction, offset_dir = offset_arrow_points(p0, p1, view)
+                        p0_draw, p1_draw, direction, offset_dir = offset_arrow_points(p0, p1, view, sides)
                         if direction is not None:
                             midpoint = DB.XYZ(
                                 (p0_draw.X + p1_draw.X) / 2.0,
