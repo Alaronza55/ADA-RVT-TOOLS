@@ -39,6 +39,12 @@ on screen - up or down for curves running horizontally, left or right
 for curves running vertically. Each question is only asked if such
 curves were picked, and the answer applies to all of them.
 
+"Click for each curve" decides curve by curve instead: each one is
+highlighted in orange and you click on the side you want, seen from
+the middle of the curve. A horizontal curve goes up or down and a
+vertical one left or right; a diagonal one can go any of the four ways.
+Esc cancels without drawing anything.
+
 Results are printed per curve and as a running total, in meters
 and millimeters."""
 __title__ = "Get Length\n(Curve)"
@@ -49,6 +55,7 @@ import math
 
 from pyrevit import revit, DB, UI
 from pyrevit import forms, script
+from Autodesk.Revit.Exceptions import OperationCanceledException
 from System.Collections.Generic import List
 
 # Custom ADA GUI - small button-choice popup (same style as the picker
@@ -66,6 +73,10 @@ MARKER_NAME = "ADA_QTO_CurveLengthArrowMarker"
 TEXT_MARKER_NAME = "ADA_QTO_CurveLengthText"
 
 UP, DOWN, LEFT, RIGHT = "Up", "Down", "Left", "Right"
+CLICK = "Click for each curve"
+ALONG_CURVE_LIMIT = 0.9        # cosine: a side closer than this to the curve's direction is not offered
+HIGHLIGHT_RADIUS = 0.08        # feet, temporary line showing the curve being clicked for
+HIGHLIGHT_COLOR = DB.Color(255, 140, 0)  # orange
 
 ARROWHEAD_LENGTH = 0.35        # feet
 ARROWHEAD_RADIUS = 0.13        # feet
@@ -259,7 +270,30 @@ def runs_vertically(p0, p1, view):
     return abs(direction.DotProduct(up)) >= abs(direction.DotProduct(right))
 
 
-def offset_arrow_points(p0, p1, view, sides):
+def side_from_click(p0, p1, point, view):
+    """The side (UP / DOWN / LEFT / RIGHT) a clicked point is on, seen from
+    the middle of the segment on screen. The sides running along the
+    segment are left out - an arrow shifted along its own line would sit
+    on the curve - so a horizontal curve only gets up / down, a vertical
+    one left / right, and a diagonal one any of the four."""
+    _, right, up = view_axes(view)
+    click = point.Subtract(p0.Add(p1).Multiply(0.5))
+    cx, cy = click.DotProduct(right), click.DotProduct(up)
+    axis = p1.Subtract(p0)
+    ax, ay = axis.DotProduct(right), axis.DotProduct(up)
+    length = math.sqrt(ax * ax + ay * ay)
+
+    best_side, best_score = None, None
+    for side, x, y in ((RIGHT, 1, 0), (LEFT, -1, 0), (UP, 0, 1), (DOWN, 0, -1)):
+        if length > 1e-9 and abs(ax * x + ay * y) / length > ALONG_CURVE_LIMIT:
+            continue
+        score = cx * x + cy * y
+        if best_score is None or score > best_score:
+            best_side, best_score = side, score
+    return best_side
+
+
+def offset_arrow_points(p0, p1, view, side):
     """Push the measured segment toward the viewer AND sideways within
     the view plane, so the drawn arrow visibly separates from the
     curve on screen instead of appearing to sit right on top of it -
@@ -269,9 +303,8 @@ def offset_arrow_points(p0, p1, view, sides):
     projection is exactly "drop the ViewDirection component", so a
     pure ViewDirection shift produces NO on-screen displacement at
     all - the arrow would land exactly on top of the measured curve.
-    The in-plane component is the side the user chose: `sides` is
-    {"vertical": LEFT or RIGHT, "horizontal": UP or DOWN}, applied
-    according to how the segment runs on screen. Shifting both endpoints by
+    The in-plane component is the side the user chose for this segment
+    (UP, DOWN, LEFT or RIGHT, on screen). Shifting both endpoints by
     the same vector doesn't change the segment's direction/length, so
     this doesn't need to be perpendicular to it. The offset scales
     with the segment's length (clamped between ARROW_OFFSET_MIN and
@@ -286,10 +319,7 @@ def offset_arrow_points(p0, p1, view, sides):
 
     toward_camera, right, up = view_axes(view)
 
-    if runs_vertically(p0, p1, view):
-        in_plane = right if sides["vertical"] == RIGHT else right.Negate()
-    else:
-        in_plane = up if sides["horizontal"] == UP else up.Negate()
+    in_plane = {UP: up, DOWN: up.Negate(), LEFT: right.Negate(), RIGHT: right}[side]
     offset_dir = toward_camera.Add(in_plane).Normalize()
 
     offset = max(ARROW_OFFSET_MIN, min(ARROW_OFFSET_MAX, dist * ARROW_OFFSET_FRACTION))
@@ -328,11 +358,45 @@ def build_arrow_faces(p0, p1, p0_true, p1_true):
     return faces
 
 
-def create_arrow_marker(p0, p1, view, sides):
+def create_highlight(p0, p1):
+    """Temporary thick line along a curve, showing which one the user is
+    clicking a side for."""
+    face_loops = build_cylinder_faces(p0, p1, HIGHLIGHT_RADIUS, SHAFT_SIDES)
+    if not face_loops:
+        return None
+
+    builder = DB.TessellatedShapeBuilder()
+    builder.OpenConnectedFaceSet(False)
+    for loop in face_loops:
+        builder.AddFace(DB.TessellatedFace(
+            List[DB.XYZ](loop), DB.ElementId.InvalidElementId))
+    builder.CloseConnectedFaceSet()
+    builder.Target = DB.TessellatedShapeBuilderTarget.AnyGeometry
+    builder.Fallback = DB.TessellatedShapeBuilderFallback.Mesh
+    builder.Build()
+    result = builder.GetBuildResult()
+    geom_objs = list(result.GetGeometricalObjects())
+
+    category_id = DB.ElementId(DB.BuiltInCategory.OST_GenericModel)
+    ds = DB.DirectShape.CreateElement(doc, category_id)
+    ds.SetShape(List[DB.GeometryObject](geom_objs))
+    ds.Name = MARKER_NAME
+
+    ogs = DB.OverrideGraphicSettings()
+    fill_id = get_solid_fill_pattern_id()
+    if fill_id != DB.ElementId.InvalidElementId:
+        ogs.SetSurfaceForegroundPatternVisible(True)
+        ogs.SetSurfaceForegroundPatternColor(HIGHLIGHT_COLOR)
+        ogs.SetSurfaceForegroundPatternId(fill_id)
+    doc.ActiveView.SetElementOverrides(ds.Id, ogs)
+    return ds
+
+
+def create_arrow_marker(p0, p1, view, side):
     """p0/p1 are the true measured endpoints (host coords); the drawn
     arrow is offset off them (toward the viewer and sideways within
     the view plane) via offset_arrow_points."""
-    p0_draw, p1_draw, direction, _ = offset_arrow_points(p0, p1, view, sides)
+    p0_draw, p1_draw, direction, _ = offset_arrow_points(p0, p1, view, side)
     if direction is None:
         return None
 
@@ -545,23 +609,62 @@ def group_collinear_markers(markers):
     return merged
 
 
+def click_sides(grouped_markers, indexes, view):
+    """Ask for a click for each marker in `indexes`, the curve being
+    highlighted, and return {index: side}. PickPoint needs a work plane,
+    so a temporary one is set through each curve, facing the view; it is
+    undone with the highlights when the group is rolled back."""
+    toward_camera, _, _ = view_axes(view)
+    clicked = {}
+    highlight = None
+    group = DB.TransactionGroup(doc, "QTO Curve Length - click sides")
+    group.Start()
+    try:
+        for n, i in enumerate(indexes):
+            p0, p1, length_m, _count = grouped_markers[i]
+            middle = p0.Add(p1).Multiply(0.5)
+            with revit.Transaction("QTO Curve Length - highlight"):
+                view.SketchPlane = DB.SketchPlane.Create(
+                    doc, DB.Plane.CreateByNormalAndOrigin(toward_camera, middle))
+                if highlight is not None:
+                    doc.Delete(highlight.Id)
+                highlight = create_highlight(p0, p1)
+            uidoc.RefreshActiveView()
+            point = uidoc.Selection.PickPoint(
+                "Curve {} of {} ({:.2f} m): click on the side where the dimension "
+                "goes - Esc to cancel".format(n + 1, len(indexes), length_m))
+            clicked[i] = side_from_click(p0, p1, point, view)
+    finally:
+        group.RollBack()
+    return clicked
+
+
 def ask_dimension_sides(grouped_markers, view):
-    """Ask on which side to draw the dimensions - only the questions that
-    apply to the picked curves: up / down for those running horizontally
-    on screen, left / right for those running vertically."""
+    """The side to draw each dimension on, as a list parallel to
+    grouped_markers. Only the questions that apply to the picked curves
+    are asked: up / down for those running horizontally on screen, left /
+    right for those running vertically - or a click for each curve."""
     vertical = [runs_vertically(g[0], g[1], view) for g in grouped_markers]
-    sides = {"horizontal": DOWN, "vertical": RIGHT}
-    questions = []
+    answers = {}
     if not all(vertical):
-        questions.append(("horizontal", [UP, DOWN], "Horizontal curves: dimension side"))
-    if any(vertical):
-        questions.append(("vertical", [LEFT, RIGHT], "Vertical curves: dimension side"))
-    for key, options, label in questions:
-        choice = select_from_buttons(options, title=__title__, label=label,
-                                     version=__version__)
-        if not choice:
+        answers[False] = select_from_buttons(
+            [UP, DOWN, CLICK], title=__title__,
+            label="Horizontal curves: dimension side", version=__version__)
+    if any(vertical) and answers.get(False, True):
+        answers[True] = select_from_buttons(
+            [LEFT, RIGHT, CLICK], title=__title__,
+            label="Vertical curves: dimension side", version=__version__)
+    if not all(answers.values()):
+        forms.alert("Cancelled.", exitscript=True)
+
+    sides = [answers[v] for v in vertical]
+    to_click = [i for i, side in enumerate(sides) if side == CLICK]
+    if to_click:
+        try:
+            for i, side in click_sides(grouped_markers, to_click, view).items():
+                sides[i] = side
+        except OperationCanceledException:
             forms.alert("Cancelled.", exitscript=True)
-        sides[key] = choice
     return sides
 
 
@@ -703,12 +806,12 @@ try:
                 except Exception:
                     facing_normal = DB.XYZ(0, 0, 1)
 
-                for p0, p1, length_m, _count in grouped_markers:
-                    marker = create_arrow_marker(p0, p1, view, sides)
+                for (p0, p1, length_m, _count), side in zip(grouped_markers, sides):
+                    marker = create_arrow_marker(p0, p1, view, side)
                     if marker is not None:
                         drawn += 1
                     try:
-                        p0_draw, p1_draw, direction, offset_dir = offset_arrow_points(p0, p1, view, sides)
+                        p0_draw, p1_draw, direction, offset_dir = offset_arrow_points(p0, p1, view, side)
                         if direction is not None:
                             midpoint = DB.XYZ(
                                 (p0_draw.X + p1_draw.X) / 2.0,
